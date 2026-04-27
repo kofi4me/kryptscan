@@ -1,0 +1,21 @@
+id: sentinel-demo-panel-detect
+
+info:
+  name: Sentinel Demo Panel Detection
+  author: codex
+  severity: medium
+  description: Detects the local demo panel used to validate Nuclei integration safely.
+  tags: sentinel,demo,http
+  reference:
+    - https://docs.projectdiscovery.io/templates
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "X-Sentinel-Demo: enabled"

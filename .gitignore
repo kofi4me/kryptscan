@@ -1,0 +1,17 @@
+.venv/
+.venv_local/
+.python_packages/
+__pycache__/
+*.pyc
+data/*.db
+data/*.sqlite3
+data/nuclei/*.jsonl
+data/nuclei/*.log
+data/nuclei/*.zip
+data/nuclei/appdata/
+data/nuclei/localappdata/
+data/reports/*.pdf
+data/tmp/
+data/logs/
+tools/
+.env
