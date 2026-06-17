@@ -130,25 +130,60 @@ def _build_pdf_bytes(
     target: str,
     asset_type: str,
     scanner_backend: str,
+    assessment_mode: str,
     recipient_email: str,
     report: AssessmentReport,
+    msp_details: dict[str, str] | None = None,
+    owner_details: dict[str, str] | None = None,
 ) -> bytes:
     canvas = _Canvas()
-    canvas.text("Sentinel Scope Vulnerability Assessment", size=20, bold=True)
+    title = "Sentinel Scope Ethical Pen-Testing" if assessment_mode in {"ethical_pentesting", "authorized_pentest"} else "Sentinel Scope Vulnerability Assessment"
+    canvas.text(title, size=20, bold=True)
     canvas.text(target, size=15, bold=True, color=(0.18, 0.45, 0.62))
     canvas.spacer(4)
     canvas.text(f"Target type: {asset_type}")
+    canvas.text(f"Assessment mode: {assessment_mode.replace('_', ' ').title()}")
     canvas.text(f"Scanner backend: {scanner_backend}")
     canvas.text(f"Report recipient: {recipient_email}")
     canvas.text(f"Generated at: {report.generated_at}")
     canvas.divider()
 
+    if msp_details:
+        canvas.text("MSP / Testing Provider", size=14, bold=True)
+        for label, value in msp_details.items():
+            if value:
+                canvas.text(f"{label}: {value}", size=10, indent=8)
+        canvas.divider()
+
+    if owner_details:
+        canvas.text("Domain / IP Owner", size=14, bold=True)
+        for label, value in owner_details.items():
+            if value:
+                canvas.text(f"{label}: {value}", size=10, indent=8)
+        canvas.divider()
+
     canvas.text("Executive Summary", size=14, bold=True)
     canvas.text(report.executive_summary, size=11, extra_gap=4)
+    if report.scope_summary:
+        canvas.spacer(4)
+        canvas.text("Scope", size=12, bold=True)
+        canvas.text(report.scope_summary, size=10, indent=8)
     canvas.spacer(4)
     canvas.text(f"Overall risk score: {report.risk_score}/100", size=12, bold=True)
     canvas.text(f"Risk band: {report.risk_band}", size=12)
     canvas.divider()
+
+    if report.methodology:
+        canvas.text("Methodology", size=14, bold=True)
+        for item in report.methodology:
+            canvas.text(f"- {item}", size=10, indent=8)
+        canvas.divider()
+
+    if report.limitations:
+        canvas.text("Limitations", size=14, bold=True)
+        for item in report.limitations:
+            canvas.text(f"- {item}", size=10, indent=8)
+        canvas.divider()
 
     canvas.bar_chart(
         "Severity Distribution",
@@ -278,13 +313,19 @@ def write_pdf_report(
     scanner_backend: str,
     recipient_email: str,
     report: AssessmentReport,
+    assessment_mode: str = "vulnerability_assessment",
+    msp_details: dict[str, str] | None = None,
+    owner_details: dict[str, str] | None = None,
 ) -> bytes:
     pdf_bytes = _build_pdf_bytes(
         target=target,
         asset_type=asset_type,
         scanner_backend=scanner_backend,
+        assessment_mode=assessment_mode,
         recipient_email=recipient_email,
         report=report,
+        msp_details=msp_details,
+        owner_details=owner_details,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(pdf_bytes)

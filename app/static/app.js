@@ -2,6 +2,10 @@ const state = {
   email: "",
   dashboard: null,
   activeReport: null,
+  activeScanId: null,
+  assessmentMode: "vulnerability_assessment",
+  scanTier: "free_preview",
+  refreshTimer: null,
 };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -11,10 +15,163 @@ document.addEventListener("DOMContentLoaded", () => {
   document
     .getElementById("verify-code-form")
     .addEventListener("submit", handleVerifyCode);
+  document.getElementById("registration-form").addEventListener("submit", handleCompleteRegistration);
   document.getElementById("scan-form").addEventListener("submit", handleCreateScan);
+  document.getElementById("manual-finding-form").addEventListener("submit", handleAddManualFinding);
+  document.querySelectorAll("[data-plan]").forEach((button) => {
+    button.addEventListener("click", () => handleCheckoutPlan(button.dataset.plan));
+  });
   document.getElementById("logout-button").addEventListener("click", handleLogout);
-  loadDashboard();
+  document.getElementById("choice-logout-button").addEventListener("click", handleLogout);
+  document.getElementById("report-download-button").addEventListener("click", () => {
+    if (state.activeScanId) downloadReport(state.activeScanId);
+  });
+  document.querySelectorAll("[data-assessment-mode]").forEach((button) => {
+    button.addEventListener("click", () => selectAssessmentMode(button.dataset.assessmentMode));
+  });
+  document.querySelectorAll("[data-scan-tier]").forEach((button) => {
+    button.addEventListener("click", () => selectScanTier(button.dataset.scanTier));
+  });
+  document.querySelectorAll("[data-choice-mode]").forEach((button) => {
+    button.addEventListener("click", () => openSelectedTool(button.dataset.choiceMode));
+  });
+  loadDashboard(false, { showChoiceWhenAuthenticated: true });
 });
+
+function getCookie(name) {
+  return document.cookie
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${name}=`))
+    ?.split("=")
+    .slice(1)
+    .join("=") || "";
+}
+
+function csrfHeaders() {
+  const token = decodeURIComponent(getCookie("kryptnet_csrf"));
+  return token ? { "X-CSRF-Token": token } : {};
+}
+
+function jsonHeaders() {
+  return { "Content-Type": "application/json", ...csrfHeaders() };
+}
+
+function showOnly(sectionId) {
+  ["landing-page", "verification-page", "registration-page", "tool-choice-page", "dashboard"].forEach((id) => {
+    const element = document.getElementById(id);
+    if (element) element.classList.toggle("hidden", id !== sectionId);
+  });
+}
+
+function showVerificationPage() {
+  showOnly("verification-page");
+  window.location.hash = "verify-code";
+}
+
+function showToolChoicePage() {
+  showOnly("tool-choice-page");
+  window.location.hash = "choose-tool";
+}
+
+function showRegistrationPage() {
+  showOnly("registration-page");
+  window.location.hash = "register";
+}
+
+function showDashboardPage() {
+  showOnly("dashboard");
+  window.location.hash = "dashboard";
+}
+
+function openSelectedTool(mode) {
+  selectAssessmentMode(mode);
+  showDashboardPage();
+}
+
+function selectAssessmentMode(mode) {
+  state.assessmentMode = mode;
+  const clientOnly = state.dashboard?.user?.role === "client_viewer";
+  document.getElementById("assessment-mode-input").value = mode;
+  document.querySelectorAll("[data-assessment-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.assessmentMode === mode);
+  });
+  const submit = document.getElementById("scan-submit-button");
+  const ethicalFields = document.getElementById("ethical-pentest-fields");
+  if (ethicalFields) {
+    ethicalFields.classList.toggle("hidden", clientOnly || mode !== "ethical_pentesting");
+  }
+  const tierSelector = document.getElementById("scan-tier-selector");
+  if (mode === "ethical_pentesting") {
+    selectScanTier("full_scan", { silent: true });
+  } else if (!state.scanTier) {
+    selectScanTier("free_preview", { silent: true });
+  }
+  if (tierSelector) {
+    tierSelector.classList.toggle("hidden", clientOnly || mode !== "vulnerability_assessment");
+  }
+  updateScanSubmitText();
+  const subtitle = document.getElementById("dashboard-subtitle");
+  if (subtitle && state.dashboard) {
+    subtitle.textContent =
+      mode === "ethical_pentesting"
+        ? `${state.dashboard.user.email} verified for ${state.dashboard.organization.domain}. Ethical Pen-Testing is paid-only and uses the approved target and full-stack testing tools.`
+        : `${state.dashboard.user.email} verified for ${state.dashboard.organization.domain}. Choose a free preview or paid full vulnerability scan for an authorized asset.`;
+  }
+  if (state.dashboard) {
+    renderCommercialReadiness(state.dashboard);
+  }
+}
+
+function selectScanTier(tier, options = {}) {
+  state.scanTier = tier;
+  document.getElementById("scan-tier-input").value = tier;
+  document.querySelectorAll("[data-scan-tier]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.scanTier === tier);
+  });
+  updateScanSubmitText();
+  if (!options.silent && state.dashboard) {
+    renderCommercialReadiness(state.dashboard);
+  }
+}
+
+function updateScanSubmitText() {
+  const submit = document.getElementById("scan-submit-button");
+  if (!submit) return;
+  if (state.assessmentMode === "ethical_pentesting") {
+    submit.textContent = "Run Paid Ethical Pen-Testing";
+  } else if (state.scanTier === "full_scan") {
+    submit.textContent = "Run Full Vulnerability Scan";
+  } else {
+    submit.textContent = "Run Free Vulnerability Scan";
+  }
+}
+
+async function handleCheckoutPlan(plan) {
+  const response = await fetch("/api/payments/checkout", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ plan }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    setStatus("dashboard-status", payload.detail || "Unable to prepare checkout.", "error");
+    return;
+  }
+  const planName = payload.plan?.name || plan;
+  const accessActive = payload.payment_access_status === "active";
+  setStatus(
+    "dashboard-status",
+    accessActive
+      ? `${planName} KryptNet debit/credit checkout link created. Paid access is active.`
+      : `${planName} KryptNet debit/credit checkout link created. Complete checkout to activate paid access.`,
+    accessActive ? "success" : "neutral"
+  );
+  if (payload.checkout_url) {
+    window.open(payload.checkout_url, "_blank", "noopener");
+  }
+  await loadDashboard();
+}
 
 async function handleRequestCode(event) {
   event.preventDefault();
@@ -23,7 +180,7 @@ async function handleRequestCode(event) {
 
   const response = await fetch("/api/auth/request-code", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify({ email }),
   });
   const payload = await response.json();
@@ -37,7 +194,8 @@ async function handleRequestCode(event) {
   const message = isConsoleDelivery
     ? `Verification code generated for ${payload.email}. Local testing mode is active, so read the code from the server terminal to continue.`
     : `Verification code sent to ${payload.email}. Check your organizational inbox and spam folder.`;
-  setStatus("auth-status", message, "success");
+  setStatus("verify-status", message, "success");
+  showVerificationPage();
 }
 
 async function handleVerifyCode(event) {
@@ -47,32 +205,70 @@ async function handleVerifyCode(event) {
 
   const response = await fetch("/api/auth/verify", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: jsonHeaders(),
     body: JSON.stringify({ email, code }),
   });
   const payload = await response.json();
 
   if (!response.ok) {
-    setStatus("auth-status", payload.detail || "Verification failed.", "error");
+    setStatus("verify-status", payload.detail || "Verification failed.", "error");
     return;
   }
 
   setStatus(
-    "auth-status",
-    "Email verified. You can now enter an authorized domain name or IP address for assessment.",
+    "verify-status",
+    "Email verified. Choose a testing option to continue.",
     "success"
   );
-  await loadDashboard(true);
+  await loadDashboard(false, { showChoiceWhenAuthenticated: true });
+}
+
+async function handleCompleteRegistration(event) {
+  event.preventDefault();
+  const response = await fetch("/api/auth/complete-registration", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      full_name: document.getElementById("register-name-input").value.trim(),
+      job_title: document.getElementById("register-title-input").value.trim(),
+      professional_role: document.getElementById("register-role-input").value.trim(),
+      company_name: document.getElementById("register-company-input").value.trim(),
+      company_address: document.getElementById("register-address-input").value.trim(),
+      phone_number: document.getElementById("register-phone-input").value.trim(),
+      testing_reason: document.getElementById("register-reason-input").value.trim(),
+      safe_use_accepted: document.getElementById("register-safe-use-input").checked,
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    setStatus("registration-status", payload.detail || "Unable to complete registration.", "error");
+    return;
+  }
+  setStatus("registration-status", "Registration completed. Choose a service to continue.", "success");
+  await loadDashboard(false, { showChoiceWhenAuthenticated: true });
 }
 
 async function handleCreateScan(event) {
   event.preventDefault();
   const target = document.getElementById("target-input").value.trim();
+  const assessment_mode = document.getElementById("assessment-mode-input").value;
+  const scan_tier = document.getElementById("scan-tier-input").value;
+  const body = { target, assessment_mode, scan_tier };
+  if (assessment_mode === "ethical_pentesting") {
+    body.pentest_depth = document.getElementById("pentest-depth-input").value;
+    body.validation_mode = document.getElementById("validation-mode-input").value;
+    body.vulnerability_focus = document
+      .getElementById("vulnerability-focus-input")
+      .value.split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    body.known_vulnerabilities = document.getElementById("known-vulnerabilities-input").value.trim() || null;
+  }
 
   const response = await fetch("/api/scans", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target }),
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
   });
   const payload = await response.json();
 
@@ -89,15 +285,25 @@ async function handleCreateScan(event) {
       deliveryNote = ` Report created, but email delivery failed: ${payload.report_email_error}.`;
     } else if (payload.report_pdf_available) {
       deliveryNote = " PDF report is ready in the dashboard.";
+    } else if (payload.scan_tier === "free_preview") {
+      deliveryNote = " Free preview summary is available on the web interface.";
     }
+  } else if (payload.status === "queued") {
+    deliveryNote = " The scan is queued and will run in the background.";
+  } else if (payload.status === "running") {
+    deliveryNote = " The scan is running in the background.";
   }
 
   setStatus(
     "dashboard-status",
-    `Assessment created for ${payload.target}. Current status: ${payload.status}.${deliveryNote}`,
+    `${formatMode(payload.assessment_mode)} created for ${payload.target}. Current status: ${payload.status}.${deliveryNote}`,
     "success"
   );
   document.getElementById("scan-form").reset();
+  selectAssessmentMode(state.assessmentMode);
+  if (state.assessmentMode === "vulnerability_assessment") {
+    selectScanTier(state.scanTier, { silent: true });
+  }
   await loadDashboard(true);
   if (payload.status === "completed") {
     await loadReport(payload.id);
@@ -105,23 +311,39 @@ async function handleCreateScan(event) {
 }
 
 async function handleLogout() {
-  await fetch("/api/auth/logout", { method: "POST" });
+  await fetch("/api/auth/logout", { method: "POST", headers: csrfHeaders() });
+  if (state.refreshTimer) {
+    window.clearTimeout(state.refreshTimer);
+    state.refreshTimer = null;
+  }
   state.dashboard = null;
   state.activeReport = null;
-  document.getElementById("dashboard").classList.add("hidden");
+  state.activeScanId = null;
+  showOnly("landing-page");
   setStatus("auth-status", "You have been logged out.", "neutral");
 }
 
-async function loadDashboard(showStatus = false) {
+async function loadDashboard(showStatus = false, options = {}) {
   const response = await fetch("/api/dashboard");
   if (!response.ok) {
-    document.getElementById("dashboard").classList.add("hidden");
+    showOnly("landing-page");
     return;
   }
 
   const payload = await response.json();
   state.dashboard = payload;
   renderDashboard(payload);
+  await loadScannerHealth();
+  if (payload.user?.role === "client_viewer") {
+    showDashboardPage();
+    await loadClientPortal();
+  } else if (!payload.user?.profile_complete) {
+    showRegistrationPage();
+  } else if (options.showChoiceWhenAuthenticated) {
+    showToolChoicePage();
+  } else {
+    showDashboardPage();
+  }
 
   if (showStatus) {
     setStatus(
@@ -135,6 +357,32 @@ async function loadDashboard(showStatus = false) {
   if (latestReport) {
     await loadReport(latestReport.id);
   }
+  scheduleDashboardRefresh(payload);
+}
+
+function scheduleDashboardRefresh(payload) {
+  if (state.refreshTimer) {
+    window.clearTimeout(state.refreshTimer);
+    state.refreshTimer = null;
+  }
+  const hasActiveScan = (payload.scans || []).some((scan) => ["queued", "running"].includes(scan.status));
+  if (hasActiveScan) {
+    state.refreshTimer = window.setTimeout(() => loadDashboard(false), 5000);
+  }
+}
+
+async function loadScannerHealth() {
+  const response = await fetch("/api/scanner-health");
+  if (!response.ok) return;
+  const payload = await response.json();
+  renderScannerHealth(payload);
+}
+
+async function loadClientPortal() {
+  const response = await fetch("/api/client-portal");
+  const payload = await response.json();
+  if (!response.ok) return;
+  renderClientPortal(payload);
 }
 
 async function loadReport(scanId) {
@@ -146,11 +394,42 @@ async function loadReport(scanId) {
   }
 
   state.activeReport = payload;
+  state.activeScanId = scanId;
+  document.getElementById("manual-finding-form").classList.remove("hidden");
   renderReport(payload);
 }
 
+async function handleAddManualFinding(event) {
+  event.preventDefault();
+  if (!state.activeScanId) {
+    setStatus("dashboard-status", "Select a completed report before adding manual evidence.", "error");
+    return;
+  }
+  const response = await fetch(`/api/scans/${state.activeScanId}/manual-findings`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      title: document.getElementById("manual-title-input").value.trim(),
+      severity: document.getElementById("manual-severity-input").value,
+      category: document.getElementById("manual-category-input").value.trim(),
+      evidence: document.getElementById("manual-evidence-input").value.trim(),
+      remediation: document.getElementById("manual-remediation-input").value.trim(),
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    setStatus("dashboard-status", payload.detail || "Unable to add manual finding.", "error");
+    return;
+  }
+  document.getElementById("manual-finding-form").reset();
+  document.getElementById("manual-severity-input").value = "medium";
+  setStatus("dashboard-status", `Manual finding added: ${payload.title}. Report regenerated.`, "success");
+  await loadDashboard();
+  await loadReport(state.activeScanId);
+}
+
 async function refreshScan(scanId) {
-  const response = await fetch(`/api/scans/${scanId}/refresh`, { method: "POST" });
+  const response = await fetch(`/api/scans/${scanId}/refresh`, { method: "POST", headers: csrfHeaders() });
   const payload = await response.json();
 
   if (!response.ok) {
@@ -174,12 +453,33 @@ function renderDashboard(payload) {
   document.getElementById(
     "dashboard-title"
   ).textContent = `${payload.organization.name} Security Command`;
-  const subtitle = document.getElementById("dashboard-subtitle");
-  if (subtitle) {
-    subtitle.textContent = `${payload.user.email} verified for ${payload.organization.domain}. Enter a domain name or IP address you are authorized to assess.`;
-  }
+  const clientOnly = payload.user?.role === "client_viewer";
+  document.getElementById("payment-panel").classList.toggle("hidden", payload.user?.role !== "owner");
+  document.getElementById("scan-form").classList.toggle("hidden", clientOnly);
+  document.getElementById("manual-finding-form").classList.toggle("hidden", clientOnly || !state.activeScanId);
+  document.getElementById("client-portal-panel").classList.toggle("hidden", !clientOnly);
+  selectAssessmentMode(state.assessmentMode);
+  renderProfiles(payload.profiles || []);
+  renderCommercialReadiness(payload);
+  renderMembers(payload.members || []);
+  renderPayments(payload.payments || []);
+  renderAudit(payload.audit_events || []);
 
   const statsGrid = document.getElementById("stats-grid");
+  const toolchainGrid = document.getElementById("toolchain-grid");
+  if (toolchainGrid) {
+    toolchainGrid.innerHTML = (payload.toolchain || [])
+      .map(
+        (item) => `
+          <article class="tool-card">
+            <strong>${escapeHtml(item.category)}</strong>
+            <div class="meta-line">${escapeHtml((item.tools || []).join(" - "))}</div>
+            <p>${escapeHtml(item.purpose)}</p>
+          </article>
+        `
+      )
+      .join("");
+  }
   const severity = payload.stats.latest_severity_counts || {};
   const cards = [
     ["Authorized Assets", payload.stats.authorized_assets ?? 0],
@@ -214,15 +514,18 @@ function renderDashboard(payload) {
           <header>
             <div>
               <strong>${escapeHtml(scan.target)}</strong>
-              <div class="meta-line">
-                <span>${escapeHtml(scan.asset_type)}</span>
-                <span>${new Date(scan.created_at).toLocaleString()}</span>
-              </div>
+          <div class="meta-line">
+            <span>${escapeHtml(scan.asset_type)}</span>
+            <span>${escapeHtml(formatMode(scan.assessment_mode))}</span>
+            <span>${escapeHtml(formatTier(scan.scan_tier))}</span>
+            <span>${new Date(scan.created_at).toLocaleString()}</span>
+          </div>
             </div>
             <span class="pill ${scan.status}">${scan.status}</span>
           </header>
           <div class="meta-line">
             <span>Risk score: ${scan.risk_score ?? "Pending"}</span>
+            <span>Manual findings: ${scan.manual_finding_count ?? 0}</span>
             <span>${severityText(scan.severity_counts)}</span>
           </div>
           <div class="meta-line">
@@ -243,10 +546,180 @@ function renderDashboard(payload) {
     .join("");
 }
 
+function renderScannerHealth(payload) {
+  const element = document.getElementById("scanner-health-grid");
+  if (!element) return;
+  const tools = payload.tools || [];
+  element.innerHTML = `
+    <article class="tool-card">
+      <strong>Scanner Health</strong>
+      <div class="meta-line">
+        <span>${payload.available ?? 0} available</span>
+        <span>${payload.missing ?? 0} missing</span>
+      </div>
+      <p>Install missing tools on the scanner server before relying on full production coverage.</p>
+    </article>
+    ${tools
+      .map(
+        (tool) => `
+          <article class="tool-card">
+            <strong>${escapeHtml(tool.name)}</strong>
+            <div class="meta-line">
+              <span>${escapeHtml(tool.category)}</span>
+              <span class="pill ${tool.available ? "completed" : "warn"}">${tool.available ? "available" : "missing"}</span>
+            </div>
+            <p>${escapeHtml(tool.resolved_path || tool.configured_path || "Not configured")}</p>
+          </article>
+        `
+      )
+      .join("")}
+  `;
+}
+
+function renderMembers(members) {
+  const element = document.getElementById("member-list");
+  if (!element) return;
+  element.innerHTML = members.length
+    ? members
+        .map(
+          (member) => `
+            <article class="readiness-card">
+              <strong>${escapeHtml(member.email)}</strong>
+              <span class="pill completed">${escapeHtml(member.role)}</span>
+              <p>${escapeHtml(member.full_name || "No display name")} - ${member.is_verified ? "verified" : "pending"}</p>
+            </article>
+          `
+        )
+        .join("")
+    : "";
+}
+
+function renderClientPortal(payload) {
+  const reportList = document.getElementById("client-report-list");
+  const remediationList = document.getElementById("client-remediation-list");
+  if (!reportList || !remediationList) return;
+  reportList.innerHTML = payload.reports.length
+    ? payload.reports
+        .map(
+          (report) => `
+            <article class="scan-card">
+              <header>
+                <div>
+                  <strong>${escapeHtml(report.target)}</strong>
+                  <div class="meta-line">
+                    <span>${escapeHtml(formatMode(report.assessment_mode))}</span>
+                    <span>${escapeHtml(report.risk_band)} risk</span>
+                    <span>Score ${report.risk_score}</span>
+                  </div>
+                </div>
+                ${report.pdf_available ? `<button type="button" onclick="downloadReport(${report.scan_id})">PDF</button>` : ""}
+              </header>
+            </article>
+          `
+        )
+        .join("")
+    : `<div class="check-card">No completed reports yet.</div>`;
+  remediationList.innerHTML = payload.remediation_queue.length
+    ? payload.remediation_queue
+        .map(
+          (item) => `
+            <article class="check-card">
+              <div class="meta-line">
+                <strong>${escapeHtml(item.title)}</strong>
+                <span class="pill ${String(item.priority).toLowerCase()}">${escapeHtml(item.priority)}</span>
+              </div>
+              <p>${escapeHtml(item.target)}: ${escapeHtml(item.action)}</p>
+            </article>
+          `
+        )
+        .join("")
+    : `<div class="check-card">No remediation items yet.</div>`;
+}
+
+function renderCommercialReadiness(payload) {
+  const element = document.getElementById("commercial-readiness");
+  if (!element || !payload) return;
+  const paymentActive = payload.entitlement?.status === "active";
+  const paidRequired =
+    state.assessmentMode === "ethical_pentesting" || state.scanTier === "full_scan";
+  element.innerHTML = `
+    <article class="readiness-card">
+      <strong>Payment</strong>
+      <span class="pill ${!paidRequired || paymentActive ? "completed" : "warn"}">${!paidRequired ? "free preview" : paymentActive ? "paid" : "required"}</span>
+      <p>${
+        !paidRequired
+          ? "Free vulnerability scan runs partial checks and displays a summary in the web interface. PDF delivery is available with the paid full scan."
+          : paymentActive
+            ? `Paid package ${escapeHtml(payload.entitlement.plan)} access is valid until ${new Date(payload.entitlement.expires_at).toLocaleDateString()}.`
+            : "Complete a one-time payment before launching full vulnerability scans or ethical pen-testing."
+      }</p>
+      ${!paidRequired || paymentActive ? "" : `<p>Choose one service package. Debit and credit card details stay inside KryptNet checkout.</p>`}
+    </article>
+  `;
+}
+
+function renderPayments(payments) {
+  const element = document.getElementById("payment-list");
+  if (!element) return;
+  element.innerHTML = payments.length
+    ? payments
+        .map(
+          (payment) => `
+            <article class="readiness-card">
+              <strong>${escapeHtml(payment.plan)} - ${(payment.amount_cents / 100).toLocaleString(undefined, { style: "currency", currency: payment.currency })}</strong>
+              <span class="pill completed">${escapeHtml(payment.status)}</span>
+              <p>${escapeHtml(payment.payment_method)} - ${escapeHtml(payment.provider_reference)}</p>
+            </article>
+          `
+        )
+        .join("")
+    : "";
+}
+
+function renderProfiles(profiles) {
+  const element = document.getElementById("profile-grid");
+  if (!element) return;
+  element.innerHTML = profiles
+    .map(
+      (profile) => `
+        <article class="profile-card">
+          <strong>${escapeHtml(profile.name)}</strong>
+          <div class="meta-line">${escapeHtml((profile.categories || []).join(" - "))}</div>
+          <p>${escapeHtml(profile.summary)}</p>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderAudit(events) {
+  const element = document.getElementById("audit-list");
+  if (!element) return;
+  element.innerHTML = events.length
+    ? events
+        .map(
+          (event) => `
+            <article class="check-card">
+              <div class="meta-line">
+                <strong>${escapeHtml(event.action)}</strong>
+                <span>${new Date(event.created_at).toLocaleString()}</span>
+              </div>
+              <p>${escapeHtml(JSON.stringify(event.details || {}))}</p>
+            </article>
+          `
+        )
+        .join("")
+    : `<div class="check-card">No audit events yet.</div>`;
+}
+
 function renderReport(report) {
   const riskBand = document.getElementById("report-risk-band");
   riskBand.textContent = `${report.risk_band} Risk`;
   riskBand.className = `risk-band ${String(report.risk_band).toLowerCase()}`;
+  const activeScan = state.dashboard?.scans?.find((scan) => scan.id === state.activeScanId);
+  document
+    .getElementById("report-download-button")
+    .classList.toggle("hidden", !activeScan?.report_pdf_available);
   document.getElementById("executive-summary").textContent = report.executive_summary;
 
   renderBars("severity-chart", [
@@ -401,7 +874,18 @@ function deliveryText(scan) {
   if (scan.report_pdf_available) {
     return "PDF ready for download";
   }
+  if (scan.scan_tier === "free_preview") {
+    return "Web summary only";
+  }
   return "PDF pending";
+}
+
+function formatMode(mode) {
+  return mode === "ethical_pentesting" || mode === "authorized_pentest" ? "Ethical Pen-Testing" : "Vulnerability Assessment";
+}
+
+function formatTier(tier) {
+  return tier === "free_preview" ? "Free Scan" : "Full Scan";
 }
 
 function downloadReport(scanId) {

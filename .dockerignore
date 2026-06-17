@@ -1,0 +1,11 @@
+.git
+.python_packages
+__pycache__
+*.pyc
+.env
+.env.scanner
+server.out.log
+server.err.log
+data
+tools
+samples

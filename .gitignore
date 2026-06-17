@@ -15,3 +15,7 @@ data/tmp/
 data/logs/
 tools/
 .env
+.env.scanner
+.env.production
+server.out.log
+server.err.log

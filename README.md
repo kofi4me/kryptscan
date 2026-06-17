@@ -1,15 +1,16 @@
-# Sentinel Scope
+# Kryptnet Security Assessment
 
-Sentinel Scope is a commercial-ready MVP for an authorized vulnerability assessment platform aimed at direct customers and MSPs. It focuses on three things that matter on day one:
+Kryptnet Security Assessment is a commercial cybersecurity assessment platform for businesses, MSPs, and IT professionals. It focuses on three things that matter on day one:
 
 - authorization guardrails before any scan is launched
-- a pluggable scanner layer so you can switch from mock to a production engine
+- a pluggable scanner layer so free previews, full vulnerability scans, and ethical pen-testing use the right backend
 - executive and technical reporting with severity counts, graphs, remediation priorities, and scan history
 
 ## Why this architecture
 
 For a resale product, the scanning engine and the commercial wrapper should be separated. This codebase uses a provider abstraction:
 
+- `free_preview`: limited vulnerability preview for free scans with web-only summary output
 - `mock`: boots instantly and generates realistic sample findings so product, sales, and reporting flows can be validated without a scanner
 - `greenbone`: real integration path using Greenbone/OpenVAS through the official `python-gvm` library
 - `nuclei`: real integration path using the Nuclei CLI for template-driven web and network checks
@@ -21,11 +22,15 @@ The app is intentionally structured so you can add an OEM-approved commercial co
 
 - Work-email verification with one-time codes
 - Domain-based authorization checks before targets can be scanned
+- Two selectable workflows:
+  - Vulnerability Assessment with a free partial scan and a paid full scan
+  - Ethical Pen-Testing as a paid-only full-stack testing service
 - Single target intake for a domain or IP, with backend scan-path selection
 - Risk-severity checks and weighted risk scoring
 - Executive summary plus technical findings
 - Severity, service, and trend graphs in the report UI
-- PDF assessment report generation and email delivery to the verified work address
+- Web summary for free vulnerability scans
+- PDF assessment report generation and email delivery for paid full scans
 - Multi-tenant organization records keyed off verified work-email domains
 - Greenbone/OpenVAS adapter scaffold and refresh flow
 
@@ -39,6 +44,48 @@ This MVP enforces same-domain authorization for websites and requires an ownersh
 
 Email-domain verification is a strong first gate, but by itself it is not sufficient proof of IP range ownership in every case.
 
+The Ethical Pen-Testing mode is intended for MSP-led testing under written authorization and agreed rules of engagement. It should stay scoped, auditable, and non-destructive unless a future production workflow adds explicit human approval and client sign-off for a specific test.
+
+## Ethical Pen-Testing Toolchain
+
+The product now exposes a full-stack ethical testing workflow map for MSP teams:
+
+- Web and API testing with Nuclei, OWASP-style checks, HTTP header review, and session control review
+- Network and service review with Greenbone/OpenVAS, service fingerprinting, and TLS posture checks
+- Cloud and SaaS posture workflows for public exposure, configuration review, and identity controls
+- Identity and access review for MFA, password policy, and privileged access evidence
+- AI-assisted triage, remediation queues, PDF reports, and client-ready delivery
+
+## Current User Workflow
+
+The app now supports this production user flow:
+
+1. User verifies email with OTP.
+2. New user completes registration with name, title, role, company, address, phone number, reason for testing, and safe-use acceptance.
+3. Returning user logs in by verified email.
+4. User selects Vulnerability Assessment or Ethical Pen-Testing.
+5. Vulnerability Assessment can run a free partial scan with web summary only.
+6. Full Vulnerability Scan and Ethical Pen-Testing require one-time KryptNet checkout payment.
+7. Paid reports are generated as PDFs and delivered to/downloaded by the verified user.
+
+## KryptNet Payment API Integration Path
+
+The dashboard includes three one-time service package buttons:
+
+- Starter
+- Professional
+- MSP Scale
+
+Each button creates a KryptNet Payment API checkout link for debit or credit card payment. The app does not collect card numbers, CVC, routing numbers, or bank account numbers.
+
+Production access activates only after `/api/payments/webhook/kryptnet` receives a verified payment event. Configure:
+
+```env
+KRYPTNET_PAYMENT_API_URL=https://payments.kryptnet.com/api
+KRYPTNET_PAYMENT_WEBHOOK_SECRET=replace-with-payment-webhook-secret
+PAYMENT_DEMO_MODE=false
+```
+
 ## Quick start
 
 1. Create a virtual environment and install dependencies:
@@ -48,6 +95,20 @@ Email-domain verification is a strong first gate, but by itself it is not suffic
    .\.venv\Scripts\Activate.ps1
    pip install -r requirements.txt
    ```
+
+## Virtual Scanner Worker
+
+Kryptnet can bundle its vulnerability assessment and ethical pen-testing tools inside a virtual scanner environment instead of installing scanners on a local workstation.
+
+Use:
+
+```bash
+cp .env.scanner.example .env.scanner
+docker compose -f docker-compose.scanner.yml build
+docker compose -f docker-compose.scanner.yml up -d
+```
+
+The scanner worker includes Nuclei, Nmap, OWASP ZAP baseline, Nikto, SSLyze, testssl.sh, Amass, Subfinder, Trivy, httpx, Naabu, dnsx, Katana, wafw00f, WhatWeb, Semgrep, Gitleaks, Grype, Checkov, Prowler, and ScoutSuite. Set `SCANNER_BACKEND=kryptnet_toolkit` so KryptNet runs both Vulnerability Assessment and Ethical Pen-Testing through the bundled tools. Use the Scanner Health dashboard after deployment to confirm readiness.
 
 2. Copy `.env.example` to `.env` and adjust the values you need.
 

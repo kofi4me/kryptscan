@@ -39,71 +39,267 @@
     </header>
 
     <main class="shell">
-      <section class="customer-gate">
-        <article class="panel welcome-panel">
-          <div class="eyebrow">Kryptnet Vulnerability Assessment</div>
-          <h1>Welcome to Kryptnet.</h1>
-          <p class="lede">
-            Your website and network are part of your business reputation. Kryptnet helps business
-            owners and MSPs uncover security weaknesses before attackers turn them into downtime,
-            data loss, financial damage, or customer trust issues.
-          </p>
-          <p class="welcome-copy">
-            Verify your organizational email to begin. After verification, enter the domain name or
-            IP address you are authorized to assess, and Kryptnet will prepare a vulnerability
-            assessment report for your verified email.
-          </p>
-
-          <div class="hero-actions">
-            <a class="cta-link" href="#verify">Verify Organizational Email</a>
-          </div>
-
-          <div class="secure-points" aria-label="Assessment value">
-            <span>Website exposure review</span>
-            <span>Network risk visibility</span>
-            <span>PDF report delivery</span>
-          </div>
-        </article>
-
-        <article id="verify" class="panel auth-panel">
-          <div class="section-head">
-            <div>
-              <div class="eyebrow">Authorized Access</div>
-              <h2>Verify your organizational email.</h2>
-              <p class="inline-copy">
-                Kryptnet sends a one-time verification code to your business domain email before
-                an assessment can be started.
-              </p>
+      <section id="landing-page" class="landing-page">
+        <article class="panel welcome-panel landing-hero">
+          <div class="landing-hero-copy">
+            <div class="eyebrow">Vulnerability Assessment and Ethical Pen-Testing</div>
+            <h1>Identify Vulnerabilities Before Attackers Do</h1>
+            <p class="lede">
+              Every unpatched vulnerability is an open door. Cybercriminals continuously scan
+              networks, servers, cloud environments, and web applications for weaknesses.
+            </p>
+            <p class="welcome-copy">
+              Hidden vulnerabilities can lead to ransomware attacks, data breaches, service
+              disruptions, regulatory penalties, and reputational damage. Kryptnet helps
+              businesses, MSPs, and security professionals discover security gaps, prioritize
+              critical risks, and strengthen defenses before attackers exploit them.
+            </p>
+            <div class="hero-statement-grid" aria-label="Security outcomes">
+              <span>Expose risky services before they are targeted</span>
+              <span>Prioritize critical vulnerabilities first</span>
+              <span>Protect client data and business operations</span>
+              <span>Strengthen compliance and security posture</span>
             </div>
           </div>
 
-          <div class="auth-stack">
-            <form id="request-code-form" class="stack">
-              <label>
-                <span>Organizational email</span>
-                <input id="email-input" type="email" placeholder="security@example.com" required />
-              </label>
-              <button type="submit">Send Verification Code</button>
-            </form>
+          <div class="landing-side">
+            <figure class="dashboard-preview" aria-label="Cybersecurity vulnerability dashboard preview">
+              <div class="preview-topline">
+                <span>Overall Risk Score</span>
+                <strong>72<span>/100</span></strong>
+                <small>High Risk</small>
+              </div>
+              <div class="preview-donut" aria-hidden="true"></div>
+              <div class="preview-metrics">
+                <article>
+                  <span>Total Vulnerabilities</span>
+                  <strong>1,248</strong>
+                </article>
+                <article>
+                  <span>Critical</span>
+                  <strong>126</strong>
+                </article>
+                <article>
+                  <span>Assets Scanned</span>
+                  <strong>156</strong>
+                </article>
+              </div>
+              <div class="preview-chart" aria-hidden="true">
+                <span style="height: 34%"></span>
+                <span style="height: 45%"></span>
+                <span style="height: 40%"></span>
+                <span style="height: 58%"></span>
+                <span style="height: 52%"></span>
+                <span style="height: 72%"></span>
+                <span style="height: 64%"></span>
+                <span style="height: 78%"></span>
+              </div>
+              <div class="preview-list">
+                <div><span>Internal Network Scan</span><b>High</b></div>
+                <div><span>Web Application Scan</span><b>Medium</b></div>
+                <div><span>Cloud Infrastructure Scan</span><b>High</b></div>
+              </div>
+            </figure>
 
-            <form id="verify-code-form" class="stack">
-              <label>
-                <span>Verification code</span>
-                <input
-                  id="code-input"
-                  type="text"
-                  inputmode="numeric"
-                  maxlength="6"
-                  placeholder="123456"
-                  required
-                />
-              </label>
-              <button type="submit">Verify Email</button>
-            </form>
+            <article id="email-entry" class="email-gate" aria-labelledby="email-gate-title">
+              <div class="eyebrow">Start Scanning Here</div>
+              <h2 id="email-gate-title">Verify your email to continue.</h2>
+              <form id="request-code-form" class="stack">
+                <label>
+                  <span>Insert Email</span>
+                  <input id="email-input" type="email" placeholder="security@example.com" required />
+                </label>
+                <button type="submit">Email Verification</button>
+              </form>
+              <div id="auth-status" class="status-card neutral">
+                Enter your email to receive a verification code and begin registration.
+              </div>
+            </article>
           </div>
+        </article>
 
-          <div id="auth-status" class="status-card neutral">
-            Enter your organizational email to request a verification code.
+        <section class="landing-band" aria-labelledby="why-scan-title">
+          <div class="section-head compact-head">
+            <div>
+              <div class="eyebrow">Why Scan Regularly?</div>
+              <h2 id="why-scan-title">Know your security posture in minutes.</h2>
+            </div>
+            <p class="inline-copy">
+              Run automated security assessments, identify critical risks, and gain visibility into
+              your organization's attack surface before it becomes a target.
+            </p>
+          </div>
+          <div class="benefit-grid">
+            <article>Discover hidden vulnerabilities and misconfigurations</article>
+            <article>Reduce the risk of ransomware and cyberattacks</article>
+            <article>Protect sensitive business and customer data</article>
+            <article>Improve compliance and security posture</article>
+            <article>Receive actionable remediation recommendations</article>
+            <article>Continuously monitor your security exposure</article>
+          </div>
+        </section>
+
+        <section class="landing-split">
+          <article class="risk-callout">
+            <div class="eyebrow">Do Not Overlook</div>
+            <h2>A single overlooked vulnerability can become a security incident.</h2>
+            <p>
+              Proactive security testing helps identify weaknesses before they provide attackers
+              with access to your network, applications, identities, data, or business operations.
+            </p>
+          </article>
+          <article class="coverage-panel">
+            <div class="eyebrow">Reduce Risk. Strengthen Security. Stay Compliant.</div>
+            <h2>Perform comprehensive assessments across:</h2>
+            <div class="coverage-grid">
+              <span>Network Infrastructure</span>
+              <span>Servers and Endpoints</span>
+              <span>Cloud Environments</span>
+              <span>Web Applications</span>
+              <span>Databases</span>
+              <span>Wireless Networks</span>
+              <span>Active Directory</span>
+              <span>External Attack Surface</span>
+            </div>
+          </article>
+        </section>
+
+        <section class="closing-band">
+          <h2>Do not wait for a breach to discover your weaknesses.</h2>
+          <p>
+            Start identifying vulnerabilities today and take control of your cybersecurity posture.
+          </p>
+        </section>
+      </section>
+
+      <section id="verification-page" class="customer-gate hidden">
+        <article class="panel welcome-panel">
+          <div class="eyebrow">Verification Required</div>
+          <h1>Check your inbox.</h1>
+          <p class="lede">
+            The verification code confirms that the request is tied to a real business email before
+            vulnerability assessment or ethical pen-testing tools are shown.
+          </p>
+          <p class="welcome-copy">
+            After verification, your account opens and you can select Vulnerability Assessment or
+            Ethical Pen-Testing, make a one-time payment, run approved work, and download PDF reports.
+          </p>
+        </article>
+
+        <article class="panel auth-panel">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">Code Verification</div>
+              <h2>Enter your verification code.</h2>
+              <p class="inline-copy">Use the six-digit code sent to your organizational email.</p>
+            </div>
+          </div>
+          <form id="verify-code-form" class="stack">
+            <label>
+              <span>Verification code</span>
+              <input
+                id="code-input"
+                type="text"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="123456"
+                required
+              />
+            </label>
+            <button type="submit">Verify Email</button>
+          </form>
+          <div id="verify-status" class="status-card neutral">
+            Enter the verification code to continue.
+          </div>
+        </article>
+      </section>
+
+      <section id="registration-page" class="customer-gate hidden">
+        <article class="panel welcome-panel">
+          <div class="eyebrow">User Accountability</div>
+          <h1>Complete your user profile.</h1>
+          <p class="lede">
+            Kryptnet requires verified identity and safe-use acceptance before any security testing
+            service can be selected or paid for.
+          </p>
+          <p class="welcome-copy">
+            This helps prevent abuse and keeps vulnerability assessment and ethical pen-testing tied
+            to a real person, company, purpose, and accepted rules of safe use.
+          </p>
+        </article>
+
+        <article class="panel auth-panel">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">Registration</div>
+              <h2>Tell us who is using the tool.</h2>
+            </div>
+          </div>
+          <form id="registration-form" class="stack">
+            <div class="form-grid">
+              <label>
+                <span>Full name</span>
+                <input id="register-name-input" type="text" placeholder="Jane Doe" required />
+              </label>
+              <label>
+                <span>Title</span>
+                <input id="register-title-input" type="text" placeholder="Security Manager" required />
+              </label>
+              <label>
+                <span>Role</span>
+                <input id="register-role-input" type="text" placeholder="IT professional, MSP owner, consultant" required />
+              </label>
+              <label>
+                <span>Company</span>
+                <input id="register-company-input" type="text" placeholder="Example Company" required />
+              </label>
+              <label>
+                <span>Phone number</span>
+                <input id="register-phone-input" type="tel" placeholder="+1 555 010 1234" required />
+              </label>
+              <label>
+                <span>Company address</span>
+                <input id="register-address-input" type="text" placeholder="Street, city, state, country" required />
+              </label>
+            </div>
+            <label>
+              <span>Reason for testing</span>
+              <textarea id="register-reason-input" placeholder="Describe why you are testing this system and your relationship to it." required></textarea>
+            </label>
+            <label class="check-option">
+              <input id="register-safe-use-input" type="checkbox" required />
+              <span>I confirm I will only test systems I own or am authorized to test, and I accept safe, non-abusive use of Kryptnet.</span>
+            </label>
+            <button type="submit">Complete Registration</button>
+          </form>
+          <div id="registration-status" class="status-card neutral">
+            Complete registration before selecting a service.
+          </div>
+        </article>
+      </section>
+
+      <section id="tool-choice-page" class="dashboard hidden">
+        <article class="panel command-panel">
+          <div class="section-head command-head">
+            <div>
+              <div class="eyebrow">Choose Tool</div>
+              <h2>Select how you want to test.</h2>
+              <p class="inline-copy">
+                Choose Vulnerability Assessment for automated risk visibility or Ethical Pen-Testing
+                for deeper MSP-led testing under approved scope.
+              </p>
+            </div>
+            <button id="choice-logout-button" class="ghost">Log Out</button>
+          </div>
+          <div class="mode-selector" aria-label="Tool choice">
+            <button type="button" class="mode-card" data-choice-mode="vulnerability_assessment">
+              <span>Vulnerability Assessment</span>
+              <small>Automated exposure, service, and known-risk review.</small>
+            </button>
+            <button type="button" class="mode-card" data-choice-mode="ethical_pentesting">
+              <span>Ethical Pen-Testing</span>
+              <small>Full-stack MSP testing with rules of engagement.</small>
+            </button>
           </div>
         </article>
       </section>
@@ -113,23 +309,115 @@
           <div class="section-head command-head">
             <div>
               <div class="eyebrow">Assessment Request</div>
-              <h2 id="dashboard-title">Start Vulnerability Assessment</h2>
+              <h2 id="dashboard-title">Start Security Assessment</h2>
               <p id="dashboard-subtitle" class="inline-copy">
-                Enter one authorized domain name or IP address to begin.
+                Select the assessment mode, then enter one authorized domain name or IP address.
               </p>
             </div>
             <button id="logout-button" class="ghost">Log Out</button>
           </div>
 
+          <div class="mode-selector" aria-label="Assessment mode">
+            <button
+              type="button"
+              class="mode-card active"
+              data-assessment-mode="vulnerability_assessment"
+            >
+              <span>Vulnerability Assessment</span>
+              <small>Automated exposure and known-risk review</small>
+            </button>
+            <button type="button" class="mode-card" data-assessment-mode="ethical_pentesting">
+              <span>Ethical Pen-Testing</span>
+              <small>Full-stack MSP testing with rules of engagement</small>
+            </button>
+          </div>
+
           <form id="scan-form" class="scan-form assessment-form">
+            <input id="assessment-mode-input" type="hidden" value="vulnerability_assessment" />
+            <input id="scan-tier-input" type="hidden" value="free_preview" />
+            <div id="scan-tier-selector" class="scan-tier-selector" aria-label="Vulnerability assessment scan type">
+              <button type="button" class="tier-card active" data-scan-tier="free_preview">
+                <span>Free Scan</span>
+                <small>Partial vulnerability scan with summary shown on the web interface.</small>
+              </button>
+              <button type="button" class="tier-card" data-scan-tier="full_scan">
+                <span>Full Scan</span>
+                <small>Deeper vulnerability scan with PDF report sent to the client email.</small>
+              </button>
+            </div>
             <label>
               <span>Domain name or IP address</span>
               <input id="target-input" type="text" placeholder="example.com or 203.0.113.10" required />
             </label>
-            <button type="submit">Run Thorough Assessment</button>
+            <div id="ethical-pentest-fields" class="ethical-fields hidden">
+              <div class="form-grid">
+                <label>
+                  <span>Testing depth</span>
+                  <select id="pentest-depth-input">
+                    <option value="standard" selected>Standard validation</option>
+                    <option value="deep">Deep validation</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Safe validation mode</span>
+                  <select id="validation-mode-input">
+                    <option value="safe_validation" selected>Non-destructive vulnerability validation</option>
+                    <option value="evidence_only">Evidence-only review</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                <span>Vulnerability focus</span>
+                <input
+                  id="vulnerability-focus-input"
+                  type="text"
+                  value="web, api, network, tls, identity, cloud, code, secrets"
+                />
+              </label>
+              <label>
+                <span>Known vulnerabilities or CVEs to validate</span>
+                <textarea
+                  id="known-vulnerabilities-input"
+                  placeholder="Optional: CVE IDs, suspected weaknesses, exposed services, affected app paths, or previous scan findings"
+                ></textarea>
+              </label>
+            </div>
+            <button id="scan-submit-button" type="submit">Run Free Vulnerability Scan</button>
           </form>
 
+          <section id="payment-panel" class="engagement-form">
+            <div class="section-head">
+              <div>
+                <h3>One-Time Payment</h3>
+                <p class="inline-copy">Required for Full Vulnerability Scan and Ethical Pen-Testing. Free vulnerability scans display a partial web summary only.</p>
+              </div>
+            </div>
+            <div class="plan-grid">
+              <button type="button" class="plan-card" data-plan="starter">
+                <span>Starter</span>
+                <strong>$99</strong>
+                <small>One-time vulnerability assessment package.</small>
+              </button>
+              <button type="button" class="plan-card featured" data-plan="professional">
+                <span>Professional</span>
+                <strong>$299</strong>
+                <small>One-time package for assessment and ethical testing.</small>
+              </button>
+              <button type="button" class="plan-card" data-plan="msp_scale">
+                <span>MSP Scale</span>
+                <strong>$799</strong>
+                <small>One-time package for larger MSP delivery teams.</small>
+              </button>
+            </div>
+          </section>
+
           <div id="dashboard-status" class="status-card hidden"></div>
+          <div id="commercial-readiness" class="commercial-readiness"></div>
+          <div id="member-list" class="commercial-readiness"></div>
+          <div id="payment-list" class="commercial-readiness"></div>
+          <div id="profile-grid" class="profile-grid"></div>
+          <div id="scanner-health-grid" class="toolchain-grid"></div>
+          <div id="toolchain-grid" class="toolchain-grid"></div>
           <div id="stats-grid" class="stats-grid"></div>
         </article>
 
@@ -182,12 +470,48 @@
                     Executive summary, severity checks, remediation priorities, and technical findings.
                   </p>
                 </div>
-                <span id="report-risk-band" class="risk-band">No report selected</span>
+                <div class="report-actions">
+                  <span id="report-risk-band" class="risk-band">No report selected</span>
+                  <button id="report-download-button" type="button" class="ghost hidden">Download PDF</button>
+                </div>
               </div>
 
               <p id="executive-summary" class="summary-copy">
                 Launch an assessment to populate the executive summary and technical findings.
               </p>
+
+              <form id="manual-finding-form" class="manual-form hidden">
+                <h4>Manual Tester Workspace</h4>
+                <div class="form-grid">
+                  <label>
+                    <span>Finding title</span>
+                    <input id="manual-title-input" type="text" placeholder="Broken access control in portal" />
+                  </label>
+                  <label>
+                    <span>Severity</span>
+                    <select id="manual-severity-input">
+                      <option value="critical">Critical</option>
+                      <option value="high">High</option>
+                      <option value="medium" selected>Medium</option>
+                      <option value="low">Low</option>
+                      <option value="info">Info</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Category</span>
+                    <input id="manual-category-input" type="text" placeholder="Access Control" />
+                  </label>
+                </div>
+                <label>
+                  <span>Evidence</span>
+                  <textarea id="manual-evidence-input" placeholder="Observed behavior, proof, screenshots reference, or reproduction notes"></textarea>
+                </label>
+                <label>
+                  <span>Remediation</span>
+                  <textarea id="manual-remediation-input" placeholder="Recommended fix and validation steps"></textarea>
+                </label>
+                <button type="submit">Add Manual Finding</button>
+              </form>
 
               <div class="detail-columns">
                 <div>
@@ -206,6 +530,25 @@
               </div>
             </article>
           </div>
+
+          <article class="panel queue-panel">
+            <div class="chart-head">
+              <h3>Commercial Audit Trail</h3>
+              <span>Newest events</span>
+            </div>
+            <div id="audit-list" class="scan-list"></div>
+          </article>
+
+          <article id="client-portal-panel" class="panel report-panel hidden">
+            <div class="chart-head">
+              <div>
+                <h3>Client Portal</h3>
+                <p class="inline-copy">Report-only view for client stakeholders.</p>
+              </div>
+            </div>
+            <div id="client-report-list" class="scan-list"></div>
+            <div id="client-remediation-list" class="checks-list"></div>
+          </article>
         </section>
       </section>
     </main>

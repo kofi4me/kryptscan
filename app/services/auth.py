@@ -19,7 +19,11 @@ class AuthService:
 
     def request_code(self, email: str) -> dict:
         normalized = email.strip().lower()
+        if "@" not in normalized or normalized.startswith("@") or normalized.endswith("@"):
+            raise ValueError("Valid organizational email required.")
         domain = normalized.split("@", 1)[1]
+        if "." not in domain:
+            raise ValueError("A business email domain is required.")
         code = generate_one_time_code()
         code_hash = hash_verification_code(self.settings.app_secret, normalized, code)
         created_at = utcnow()
@@ -53,10 +57,10 @@ class AuthService:
             if user is None:
                 connection.execute(
                     """
-                    INSERT INTO users (organization_id, email, created_at)
-                    VALUES (?, ?, ?)
+                    INSERT INTO users (organization_id, email, role, created_at)
+                    VALUES (?, ?, ?, ?)
                     """,
-                    (organization["id"], normalized, created_at.isoformat()),
+                    (organization["id"], normalized, "owner", created_at.isoformat()),
                 )
 
             connection.execute(
@@ -77,6 +81,8 @@ class AuthService:
 
     def verify_code(self, email: str, code: str) -> Row:
         normalized = email.strip().lower()
+        if "@" not in normalized:
+            raise ValueError("Valid organizational email required.")
         expected_hash = hash_verification_code(self.settings.app_secret, normalized, code)
         now = utcnow()
 

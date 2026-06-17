@@ -155,6 +155,17 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
         risk_score=risk_score,
         risk_band=band,
         severity_counts=counts,
+        scope_summary=f"Assessment scope was limited to {target} and evidence collected during the approved workflow.",
+        methodology=[
+            "Authorized target validation",
+            "Scanner evidence normalization",
+            "Severity scoring and remediation prioritization",
+            "Analyst review of technical findings",
+        ],
+        limitations=[
+            "Results reflect the reachable services and evidence available at assessment time.",
+            "Authenticated application, cloud, identity, and business logic testing require client-provided access and explicit approval.",
+        ],
         scan_protocols=[],
         findings=findings,
         compliance_checks=compliance_checks,

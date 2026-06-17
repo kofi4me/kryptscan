@@ -1,0 +1,71 @@
+services:
+  - type: web
+    name: kryptnet-pentest
+    runtime: python
+    plan: starter
+    region: ohio
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: kryptnet-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 5
+    envVars:
+      - key: APP_NAME
+        value: Kryptnet Security Assessment
+      - key: APP_ENV
+        value: staging
+      - key: APP_SECRET
+        generateValue: true
+      - key: APP_HOST
+        value: 0.0.0.0
+      - key: SESSION_COOKIE_NAME
+        value: kryptnet_session
+      - key: SESSION_COOKIE_SECURE
+        value: true
+      - key: SESSION_TTL_HOURS
+        value: 24
+      - key: TRUSTED_HOSTS
+        value: pentest.kryptnet.org,*.onrender.com
+      - key: RATE_LIMIT_ENABLED
+        value: true
+      - key: MAX_REQUEST_BODY_BYTES
+        value: 1048576
+      - key: ALLOW_PRIVATE_NETWORK_TARGETS
+        value: false
+      - key: DATABASE_PATH
+        value: data/vuln_app.db
+      - key: REPORTS_DIR
+        value: data/reports
+      - key: EMAIL_DELIVERY
+        value: console
+      - key: EMAIL_FROM
+        value: security@kryptnet.org
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_USE_TLS
+        value: true
+      - key: KRYPTNET_PAYMENT_API_URL
+        value: https://payments.kryptnet.com/api
+      - key: KRYPTNET_PAYMENT_WEBHOOK_SECRET
+        sync: false
+      - key: PAYMENT_DEMO_MODE
+        value: false
+      - key: SCANNER_BACKEND
+        value: mock
+      - key: CLOUD_CHECKS_ENABLED
+        value: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5-mini
+      - key: OPENAI_BASE_URL
+        value: https://api.openai.com/v1

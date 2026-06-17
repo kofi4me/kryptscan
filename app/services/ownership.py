@@ -35,7 +35,33 @@ def infer_asset_type(target: str) -> str:
         return "website"
 
 
-def build_scan_protocols(asset_type: str, target_kind: str) -> list[str]:
+def normalize_assessment_mode(value: str | None) -> str:
+    mode = (value or "vulnerability_assessment").strip().lower()
+    if mode == "authorized_pentest":
+        return "ethical_pentesting"
+    if mode in {"vulnerability_assessment", "ethical_pentesting"}:
+        return mode
+    raise ValueError("Assessment mode must be vulnerability_assessment or ethical_pentesting.")
+
+
+def build_scan_protocols(asset_type: str, target_kind: str, assessment_mode: str = "vulnerability_assessment") -> list[str]:
+    assessment_mode = normalize_assessment_mode(assessment_mode)
+    if assessment_mode == "ethical_pentesting":
+        protocols = [
+            "Verified account, completed payment, and authorized target validation",
+            "Scoped reconnaissance limited to the approved target",
+            "Network, service, web, API, and identity surface mapping",
+            "Known vulnerability validation using non-destructive evidence",
+            "Exploitability likelihood review with no persistence, brute force, or destructive payloads",
+            "Manual tester notes and AI-assisted remediation drafting",
+            "Client-ready ethical pen-testing report delivery",
+        ]
+        if asset_type == "website":
+            protocols.insert(3, "OWASP-oriented web, API, authentication, and session control review")
+        if target_kind in {"hostname"}:
+            protocols.insert(2, "DNS-backed hostname resolution")
+        return protocols
+
     if asset_type == "website":
         return [
             "DNS resolution and hostname validation",

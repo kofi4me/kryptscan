@@ -6,6 +6,7 @@ import hmac
 import json
 import secrets
 from datetime import UTC, datetime, timedelta
+from collections import defaultdict, deque
 
 from app.config import Settings
 
@@ -77,3 +78,40 @@ def verify_session_token(settings: Settings, token: str) -> dict | None:
         return None
 
     return payload
+
+
+def create_csrf_token(settings: Settings) -> str:
+    nonce = secrets.token_urlsafe(24)
+    signature = hmac.new(
+        settings.app_secret.encode("utf-8"), nonce.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    return f"{nonce}.{signature}"
+
+
+def verify_csrf_token(settings: Settings, token: str | None) -> bool:
+    if not token:
+        return False
+    try:
+        nonce, signature = token.split(".", 1)
+    except ValueError:
+        return False
+    expected = hmac.new(
+        settings.app_secret.encode("utf-8"), nonce.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(signature, expected)
+
+
+class InMemoryRateLimiter:
+    def __init__(self) -> None:
+        self._events: dict[str, deque[float]] = defaultdict(deque)
+
+    def allow(self, key: str, *, limit: int, window_seconds: int) -> bool:
+        now = utcnow().timestamp()
+        threshold = now - window_seconds
+        events = self._events[key]
+        while events and events[0] < threshold:
+            events.popleft()
+        if len(events) >= limit:
+            return False
+        events.append(now)
+        return True

@@ -1,0 +1,35 @@
+services:
+  kryptnet-app:
+    build:
+      context: .
+      dockerfile: scanner-worker/Dockerfile
+    container_name: kryptnet-app
+    env_file:
+      - .env.scanner
+    expose:
+      - "8000"
+    volumes:
+      - ./data:/workspace/data
+      - ./samples:/workspace/samples:ro
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    container_name: kryptnet-caddy
+    depends_on:
+      - kryptnet-app
+    environment:
+      KRYPTNET_DOMAIN: ${KRYPTNET_DOMAIN}
+      KRYPTNET_EMAIL: ${KRYPTNET_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
