@@ -110,6 +110,11 @@ docker compose -f docker-compose.scanner.yml up -d
 
 The scanner worker includes Nuclei, Nmap, OWASP ZAP baseline, Nikto, SSLyze, testssl.sh, Amass, Subfinder, Trivy, httpx, Naabu, dnsx, Katana, wafw00f, WhatWeb, Semgrep, Gitleaks, Grype, Checkov, Prowler, and ScoutSuite. Set `SCANNER_BACKEND=kryptnet_toolkit` so KryptNet runs both Vulnerability Assessment and Ethical Pen-Testing through the bundled tools. Use the Scanner Health dashboard after deployment to confirm readiness.
 
+For public deployment on `pentest.kryptnet.org`, use:
+
+- [HETZNER_DEPLOYMENT.md](HETZNER_DEPLOYMENT.md) for Hetzner Cloud
+- [RENDER_GITHUB_DEPLOYMENT.md](RENDER_GITHUB_DEPLOYMENT.md) for a lighter Render/GitHub staging deployment
+
 2. Copy `.env.example` to `.env` and adjust the values you need.
 
 3. Run the app:
