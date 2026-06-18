@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: kryptnet-pentest
+    name: kryptnet-kryptscan
     runtime: python
     plan: starter
     region: ohio
@@ -28,7 +28,7 @@ services:
       - key: SESSION_TTL_HOURS
         value: 24
       - key: TRUSTED_HOSTS
-        value: pentest.kryptnet.org,*.onrender.com
+        value: kryptscan.kryptnet.org,*.onrender.com
       - key: RATE_LIMIT_ENABLED
         value: true
       - key: MAX_REQUEST_BODY_BYTES

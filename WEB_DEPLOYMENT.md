@@ -15,7 +15,7 @@ Use a Linux VPS/cloud VM with:
 Recommended DNS:
 
 ```text
-pentest.kryptnet.org  A  <server-public-ip>
+kryptscan.kryptnet.org  A  <server-public-ip>
 ```
 
 ## 2. Copy Project to Server
@@ -38,10 +38,10 @@ cp .env.production.example .env.scanner
 Edit `.env.scanner` and set:
 
 ```env
-KRYPTNET_DOMAIN=pentest.kryptnet.org
+KRYPTNET_DOMAIN=kryptscan.kryptnet.org
 KRYPTNET_EMAIL=security@kryptnet.org
 APP_SECRET=<long-random-secret>
-TRUSTED_HOSTS=pentest.kryptnet.org
+TRUSTED_HOSTS=kryptscan.kryptnet.org
 EMAIL_FROM=security@kryptnet.org
 SMTP_HOST=<smtp-host>
 SMTP_USERNAME=<smtp-user>
@@ -73,8 +73,8 @@ Caddy automatically requests and renews HTTPS certificates.
 
 ```bash
 docker compose --env-file .env.scanner -f docker-compose.production.yml ps
-curl -I https://pentest.kryptnet.org
-curl https://pentest.kryptnet.org/health
+curl -I https://kryptscan.kryptnet.org
+curl https://kryptscan.kryptnet.org/health
 ```
 
 Expected health response:
@@ -88,7 +88,7 @@ Expected health response:
 Configure the KryptNet Payment API to call:
 
 ```text
-POST https://pentest.kryptnet.org/api/payments/webhook/kryptnet
+POST https://kryptscan.kryptnet.org/api/payments/webhook/kryptnet
 ```
 
 Required header:
@@ -114,7 +114,7 @@ Paid access activates only after a verified webhook event.
 
 ## 7. Live Test Checklist
 
-1. Open `https://pentest.kryptnet.org`.
+1. Open `https://kryptscan.kryptnet.org`.
 2. Enter email and verify OTP.
 3. Complete registration and safe-use acceptance.
 4. Select Vulnerability Assessment.

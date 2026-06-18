@@ -5,7 +5,7 @@ Hetzner Cloud is a good production target for Kryptnet because the app needs a r
 Target domain:
 
 ```text
-https://pentest.kryptnet.org
+https://kryptscan.kryptnet.org
 ```
 
 ## 1. Recommended Hetzner Server
@@ -42,7 +42,7 @@ In the DNS manager for `kryptnet.org`, create:
 
 ```text
 Type: A
-Name: pentest
+Name: kryptscan
 Value: <hetzner-server-ip>
 TTL: Auto or 300
 ```
@@ -50,7 +50,7 @@ TTL: Auto or 300
 The result should be:
 
 ```text
-pentest.kryptnet.org -> <hetzner-server-ip>
+kryptscan.kryptnet.org -> <hetzner-server-ip>
 ```
 
 ## 4. Server Setup
@@ -122,11 +122,11 @@ nano .env.scanner
 Minimum required values:
 
 ```env
-KRYPTNET_DOMAIN=pentest.kryptnet.org
+KRYPTNET_DOMAIN=kryptscan.kryptnet.org
 KRYPTNET_EMAIL=security@kryptnet.org
 APP_ENV=production
 APP_SECRET=<long-random-secret>
-TRUSTED_HOSTS=pentest.kryptnet.org
+TRUSTED_HOSTS=kryptscan.kryptnet.org
 SESSION_COOKIE_SECURE=true
 EMAIL_DELIVERY=smtp
 EMAIL_FROM=security@kryptnet.org
@@ -153,13 +153,13 @@ docker compose --env-file .env.scanner -f docker-compose.production.yml build
 docker compose --env-file .env.scanner -f docker-compose.production.yml up -d
 ```
 
-Caddy will automatically request the HTTPS certificate for `pentest.kryptnet.org`.
+Caddy will automatically request the HTTPS certificate for `kryptscan.kryptnet.org`.
 
 ## 8. Verify Deployment
 
 ```bash
 docker compose --env-file .env.scanner -f docker-compose.production.yml ps
-curl https://pentest.kryptnet.org/health
+curl https://kryptscan.kryptnet.org/health
 ```
 
 Expected:
@@ -171,7 +171,7 @@ Expected:
 Open:
 
 ```text
-https://pentest.kryptnet.org
+https://kryptscan.kryptnet.org
 ```
 
 ## 9. Logs
@@ -190,7 +190,7 @@ docker compose --env-file .env.scanner -f docker-compose.production.yml logs -f 
 
 ## 10. Live Test
 
-1. Open `https://pentest.kryptnet.org`.
+1. Open `https://kryptscan.kryptnet.org`.
 2. Verify email with OTP.
 3. Complete registration.
 4. Run a free vulnerability scan.
@@ -200,7 +200,7 @@ docker compose --env-file .env.scanner -f docker-compose.production.yml logs -f 
 8. Configure payment webhook:
 
 ```text
-POST https://pentest.kryptnet.org/api/payments/webhook/kryptnet
+POST https://kryptscan.kryptnet.org/api/payments/webhook/kryptnet
 Header: X-KryptNet-Webhook-Secret
 ```
 
