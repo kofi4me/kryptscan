@@ -34,7 +34,8 @@ RUN go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
     && go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest \
     && go install github.com/projectdiscovery/katana/cmd/katana@latest \
     && go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest \
-    && go install github.com/owasp-amass/amass/v4/...@latest
+    && go install github.com/owasp-amass/amass/v4/...@latest \
+    && go install github.com/gitleaks/gitleaks/v8@latest
 
 RUN pip install --no-cache-dir \
     checkov \
@@ -52,8 +53,7 @@ RUN git clone --depth 1 https://github.com/drwetter/testssl.sh.git /opt/testssl 
     && ln -s /opt/testssl/testssl.sh /usr/local/bin/testssl.sh
 
 RUN curl -fsSL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin \
-    && curl -fsSL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin \
-    && curl -fsSL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | sh -s -- -b /usr/local/bin
+    && curl -fsSL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
 RUN wget -q https://sourceforge.net/projects/zap.mirror/files/v2.17.0/ZAP_2.17.0_Linux.tar.gz/download -O /tmp/zap.tgz \
     && tar -xzf /tmp/zap.tgz -C /opt \
