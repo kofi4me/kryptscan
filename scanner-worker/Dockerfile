@@ -53,11 +53,11 @@ RUN git clone --depth 1 https://github.com/drwetter/testssl.sh.git /opt/testssl 
 
 RUN curl -fsSL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin \
     && curl -fsSL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin \
-    && curl -fsSL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sh -s -- -b /usr/local/bin
+    && curl -fsSL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | sh -s -- -b /usr/local/bin
 
-RUN wget -q https://github.com/zaproxy/zaproxy/releases/download/v2.15.0/ZAP_2.15.0_Linux.tar.gz -O /tmp/zap.tgz \
+RUN wget -q https://sourceforge.net/projects/zap.mirror/files/v2.17.0/ZAP_2.17.0_Linux.tar.gz/download -O /tmp/zap.tgz \
     && tar -xzf /tmp/zap.tgz -C /opt \
-    && ln -s /opt/ZAP_2.15.0/zap-baseline.py /usr/local/bin/zap-baseline.py \
+    && ln -s /opt/ZAP_2.17.0/zap-baseline.py /usr/local/bin/zap-baseline.py \
     && rm /tmp/zap.tgz
 
 WORKDIR /workspace
