@@ -2,8 +2,25 @@ services:
   kryptnet-app:
     build:
       context: .
-      dockerfile: scanner-worker/Dockerfile
+      dockerfile: Dockerfile.web
     container_name: kryptnet-app
+    env_file:
+      - .env
+    environment:
+      SCANNER_BACKEND: worker
+      SCANNER_WORKER_URL: http://kryptnet-scanner:8000
+    expose:
+      - "8000"
+    volumes:
+      - ./data:/workspace/data
+      - ./samples:/workspace/samples:ro
+    restart: unless-stopped
+
+  kryptnet-scanner:
+    build:
+      context: .
+      dockerfile: scanner-worker/Dockerfile
+    container_name: kryptnet-scanner
     env_file:
       - .env.scanner
     expose:
@@ -18,6 +35,7 @@ services:
     container_name: kryptnet-caddy
     depends_on:
       - kryptnet-app
+      - kryptnet-scanner
     environment:
       KRYPTNET_DOMAIN: ${KRYPTNET_DOMAIN}
       KRYPTNET_EMAIL: ${KRYPTNET_EMAIL}
