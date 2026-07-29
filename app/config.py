@@ -61,11 +61,13 @@ class Settings:
     allow_private_network_targets: bool
     email_delivery: str
     email_from: str
+    email_from_name: str
     smtp_host: str
     smtp_port: int
     smtp_username: str
     smtp_password: str
     smtp_use_tls: bool
+    smtp_use_ssl: bool
     scanner_backend: str
     nuclei_path: str
     nuclei_severity: str
@@ -102,6 +104,9 @@ class Settings:
     openai_api_key: str
     openai_base_url: str
     openai_model: str
+    scanner_worker_url: str
+    scanner_worker_token: str
+    scanner_worker_timeout_seconds: int
     greenbone_connection: str
     greenbone_host: str
     greenbone_port: int
@@ -147,11 +152,13 @@ def get_settings() -> Settings:
         allow_private_network_targets=_env_bool("ALLOW_PRIVATE_NETWORK_TARGETS", False),
         email_delivery=_env("EMAIL_DELIVERY", "console").strip().lower(),
         email_from=_env("EMAIL_FROM", "security@example.com"),
+        email_from_name=_env("SMTP_FROM_NAME", "KryptNet"),
         smtp_host=_env("SMTP_HOST", ""),
         smtp_port=_env_int("SMTP_PORT", 587),
         smtp_username=_env("SMTP_USERNAME", ""),
         smtp_password=_env("SMTP_PASSWORD", ""),
         smtp_use_tls=_env_bool("SMTP_USE_TLS", True),
+        smtp_use_ssl=_env_bool("SMTP_USE_SSL", False),
         scanner_backend=_env("SCANNER_BACKEND", "mock").strip().lower(),
         nuclei_path=_env("NUCLEI_PATH", "nuclei"),
         nuclei_severity=_env("NUCLEI_SEVERITY", "critical,high,medium,low"),
@@ -188,6 +195,9 @@ def get_settings() -> Settings:
         openai_api_key=_env("OPENAI_API_KEY", ""),
         openai_base_url=_env("OPENAI_BASE_URL", "https://api.openai.com/v1"),
         openai_model=_env("OPENAI_MODEL", "gpt-5-mini"),
+        scanner_worker_url=_env("SCANNER_WORKER_URL", ""),
+        scanner_worker_token=_env("SCANNER_WORKER_TOKEN", ""),
+        scanner_worker_timeout_seconds=_env_int("SCANNER_WORKER_TIMEOUT_SECONDS", 900),
         greenbone_connection=_env("GREENBONE_CONNECTION", "tls").strip().lower(),
         greenbone_host=_env("GREENBONE_HOST", "127.0.0.1"),
         greenbone_port=_env_int("GREENBONE_PORT", 9390),

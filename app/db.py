@@ -139,6 +139,8 @@ CREATE TABLE IF NOT EXISTS scans (
     report_pdf_path TEXT,
     report_email_sent_at TEXT,
     report_email_error TEXT,
+    progress_percent INTEGER NOT NULL DEFAULT 0,
+    progress_message TEXT,
     error_message TEXT,
     created_at TEXT NOT NULL,
     started_at TEXT,
@@ -231,6 +233,8 @@ def _ensure_scan_columns(connection: sqlite3.Connection) -> None:
         "report_pdf_path": "TEXT",
         "report_email_sent_at": "TEXT",
         "report_email_error": "TEXT",
+        "progress_percent": "INTEGER NOT NULL DEFAULT 0",
+        "progress_message": "TEXT",
     }
     for column_name, column_type in required_columns.items():
         if column_name not in columns:

@@ -5,6 +5,7 @@ from app.services.scanners.free_preview import FreePreviewScannerProvider
 from app.services.scanners.greenbone import GreenboneScannerProvider
 from app.services.scanners.mock import MockScannerProvider
 from app.services.scanners.nuclei import NucleiScannerProvider
+from app.services.scanners.worker import WorkerScannerProvider
 
 
 def greenbone_is_available() -> bool:
@@ -17,6 +18,9 @@ def greenbone_is_available() -> bool:
 
 def resolve_backend_name(settings, asset_type: str, assessment_mode: str = "vulnerability_assessment") -> str:
     backend = settings.scanner_backend
+    if backend in {"worker", "scanner_worker"}:
+        return "worker"
+
     if backend in {"kryptnet_toolkit", "ethical_toolkit", "full_toolkit"}:
         return "ethical_toolkit"
 
@@ -36,6 +40,8 @@ def resolve_backend_name(settings, asset_type: str, assessment_mode: str = "vuln
 
 def get_scanner_provider(settings, backend_name: str | None = None):
     selected_backend = (backend_name or settings.scanner_backend).lower()
+    if selected_backend in {"worker", "scanner_worker"}:
+        return WorkerScannerProvider(settings)
     if selected_backend == "greenbone":
         return GreenboneScannerProvider(settings)
     if selected_backend == "free_preview":

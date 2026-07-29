@@ -26,6 +26,9 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("report-download-button").addEventListener("click", () => {
     if (state.activeScanId) downloadReport(state.activeScanId);
   });
+  document.getElementById("report-email-button").addEventListener("click", () => {
+    if (state.activeScanId) emailReport(state.activeScanId);
+  });
   document.querySelectorAll("[data-assessment-mode]").forEach((button) => {
     button.addEventListener("click", () => selectAssessmentMode(button.dataset.assessmentMode));
   });
@@ -528,6 +531,15 @@ function renderDashboard(payload) {
             <span>Manual findings: ${scan.manual_finding_count ?? 0}</span>
             <span>${severityText(scan.severity_counts)}</span>
           </div>
+          <div class="scan-progress" aria-label="Scan progress">
+            <div class="bar-track">
+              <div class="bar-fill" style="width: ${Math.max(5, Number(scan.progress_percent || 0))}%;"></div>
+            </div>
+            <div class="meta-line">
+              <span>${Number(scan.progress_percent || 0)}% complete</span>
+              <span>${escapeHtml(scan.progress_message || statusProgressText(scan.status))}</span>
+            </div>
+          </div>
           <div class="meta-line">
             <span>${escapeHtml(deliveryText(scan))}</span>
           </div>
@@ -720,6 +732,9 @@ function renderReport(report) {
   document
     .getElementById("report-download-button")
     .classList.toggle("hidden", !activeScan?.report_pdf_available);
+  document
+    .getElementById("report-email-button")
+    .classList.toggle("hidden", !activeScan?.report_pdf_available || activeScan?.scan_tier === "free_preview");
   document.getElementById("executive-summary").textContent = report.executive_summary;
 
   renderBars("severity-chart", [
@@ -880,6 +895,14 @@ function deliveryText(scan) {
   return "PDF pending";
 }
 
+function statusProgressText(status) {
+  if (status === "queued") return "Queued for scanner worker.";
+  if (status === "running") return "Scanner toolchain is running.";
+  if (status === "completed") return "Scan complete successfully.";
+  if (status === "failed") return "Scan failed. Review the error details.";
+  return "Preparing scan.";
+}
+
 function formatMode(mode) {
   return mode === "ethical_pentesting" || mode === "authorized_pentest" ? "Ethical Pen-Testing" : "Vulnerability Assessment";
 }
@@ -890,6 +913,26 @@ function formatTier(tier) {
 
 function downloadReport(scanId) {
   window.location.assign(`/api/reports/${scanId}/pdf`);
+}
+
+async function emailReport(scanId) {
+  const response = await fetch(`/api/reports/${scanId}/email`, {
+    method: "POST",
+    headers: csrfHeaders(),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    setStatus("dashboard-status", payload.detail || "Unable to email PDF report.", "error");
+    return;
+  }
+  setStatus(
+    "dashboard-status",
+    payload.report_email_error
+      ? `PDF generated, but email delivery failed: ${payload.report_email_error}`
+      : "PDF report sent to your verified email address.",
+    payload.report_email_error ? "error" : "success"
+  );
+  await loadDashboard();
 }
 
 function escapeHtml(value) {
@@ -904,3 +947,4 @@ function escapeHtml(value) {
 window.refreshScan = refreshScan;
 window.loadReport = loadReport;
 window.downloadReport = downloadReport;
+window.emailReport = emailReport;

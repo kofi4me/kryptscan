@@ -205,6 +205,8 @@ class ScanSummary(BaseModel):
     report_pdf_available: bool = False
     report_email_sent_at: str | None = None
     report_email_error: str | None = None
+    progress_percent: int = 0
+    progress_message: str | None = None
 
 
 class AuditEventSummary(BaseModel):

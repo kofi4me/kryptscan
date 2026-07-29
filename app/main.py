@@ -427,6 +427,8 @@ def _summary_from_row(scan: Row) -> ScanSummary:
         report_pdf_available=bool(scan["report_pdf_path"]),
         report_email_sent_at=scan["report_email_sent_at"],
         report_email_error=scan["report_email_error"],
+        progress_percent=int(scan["progress_percent"] or 0),
+        progress_message=scan["progress_message"],
     )
 
 
@@ -475,6 +477,20 @@ def _safe_report_file_path(path_value: str) -> str:
             detail="Only PDF report downloads are allowed.",
         )
     return str(candidate)
+
+
+def _update_scan_progress(scan_id: int, organization_id: int, percent: int, message: str) -> None:
+    with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE scans
+            SET progress_percent = ?,
+                progress_message = ?,
+                refreshed_at = ?
+            WHERE id = ? AND organization_id = ?
+            """,
+            (max(0, min(100, percent)), message, utcnow().isoformat(), scan_id, organization_id),
+        )
 
 
 def _report_msp_details(user: Row) -> dict[str, str]:
@@ -686,6 +702,8 @@ def _store_completed_scan(
                 report_pdf_path = COALESCE(?, report_pdf_path),
                 report_email_sent_at = COALESCE(?, report_email_sent_at),
                 report_email_error = ?,
+                progress_percent = 100,
+                progress_message = 'Scan complete successfully. Report is ready.',
                 refreshed_at = ?,
                 completed_at = ?
             WHERE id = ?
@@ -718,6 +736,8 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
             UPDATE scans
             SET status = 'running',
                 started_at = COALESCE(started_at, ?),
+                progress_percent = 10,
+                progress_message = 'Scan started. Preparing approved toolchain.',
                 refreshed_at = ?
             WHERE id = ? AND organization_id = ?
             """,
@@ -726,9 +746,21 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
         _audit(connection, user, "scan.started", {"scan_id": scan_id, "backend": scan["scanner_backend"]})
         scan = _load_scan(connection, scan_id, user["organization_id"])
 
+    _update_scan_progress(scan_id, user["organization_id"], 20, "Validating scope, scan profile, and scanner backend.")
     provider = get_scanner_provider(settings, scan["scanner_backend"])
     try:
-        scheduled = provider.schedule(scan["normalized_target"], scan["asset_type"])
+        scan_protocols = json.loads(scan["scan_profile_json"] or "[]")
+        _update_scan_progress(scan_id, user["organization_id"], 35, "Running scanner stages. This can take several minutes for full assessments.")
+        try:
+            scheduled = provider.schedule(
+                scan["normalized_target"],
+                scan["asset_type"],
+                assessment_mode=scan["assessment_mode"],
+                scan_tier=scan["scan_tier"],
+                scan_protocols=scan_protocols,
+            )
+        except TypeError:
+            scheduled = provider.schedule(scan["normalized_target"], scan["asset_type"])
     except Exception as exc:
         with get_connection() as connection:
             connection.execute(
@@ -736,21 +768,23 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
                 UPDATE scans
                 SET status = 'failed',
                     error_message = ?,
+                    progress_message = ?,
                     refreshed_at = ?
                 WHERE id = ? AND organization_id = ?
                 """,
-                (str(exc), utcnow().isoformat(), scan_id, user["organization_id"]),
+                (str(exc), f"Scan failed: {str(exc)}", utcnow().isoformat(), scan_id, user["organization_id"]),
             )
             _audit(connection, user, "scan.failed", {"scan_id": scan_id, "error": str(exc)})
         return
 
     if scheduled.report is not None:
+        _update_scan_progress(scan_id, user["organization_id"], 90, "Scanner results received. Building professional report.")
         create_pdf = (scan["scan_tier"] or "full_scan") == "full_scan"
         _store_completed_scan(
             scan_id=scan_id,
             user=user,
             report=scheduled.report,
-            notify_user=create_pdf,
+            notify_user=False,
             create_pdf=create_pdf,
             backend_name=scheduled.backend,
         )
@@ -766,6 +800,8 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
                 scanner_backend = ?,
                 external_task_id = ?,
                 external_report_id = ?,
+                progress_percent = 45,
+                progress_message = ?,
                 refreshed_at = ?
             WHERE id = ? AND organization_id = ?
             """,
@@ -774,6 +810,7 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
                 scheduled.backend,
                 scheduled.external_task_id,
                 scheduled.external_report_id,
+                scheduled.message,
                 utcnow().isoformat(),
                 scan_id,
                 user["organization_id"],
@@ -1697,10 +1734,12 @@ def create_scan(
                 scan_tier,
                 status,
                 scan_profile_json,
+                progress_percent,
+                progress_message,
                 created_at,
                 started_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)
             """,
             (
                 user["organization_id"],
@@ -1711,6 +1750,8 @@ def create_scan(
                 assessment_mode,
                 scan_tier,
                 json.dumps(scan_protocols),
+                5,
+                "Scan queued. Waiting for scanner worker.",
                 now,
                 None,
             ),
@@ -1826,6 +1867,23 @@ def refresh_scan(
     if scan["scanner_backend"] in {"mock", "nuclei", "ethical_toolkit", "free_preview"}:
         provider = get_scanner_provider(settings, scan["scanner_backend"])
         refreshed = provider.refresh(scan["normalized_target"], scan["asset_type"])
+    elif scan["scanner_backend"] == "worker":
+        provider = get_scanner_provider(settings, scan["scanner_backend"])
+        try:
+            refreshed = provider.refresh(
+                scan["normalized_target"],
+                scan["asset_type"],
+                scan["external_task_id"],
+                scan["external_report_id"],
+            )
+        except Exception as exc:
+            with get_connection() as connection:
+                connection.execute(
+                    "UPDATE scans SET status = 'failed', error_message = ?, progress_message = ?, refreshed_at = ? WHERE id = ?",
+                    (str(exc), f"Worker refresh failed: {str(exc)}", utcnow().isoformat(), scan_id),
+                )
+                scan = _load_scan(connection, scan_id, user["organization_id"])
+            return _summary_from_row(scan)
     else:
         provider = get_scanner_provider(settings, scan["scanner_backend"])
         try:
@@ -1849,15 +1907,15 @@ def refresh_scan(
             scan_id=scan_id,
             user=user,
             report=refreshed.report,
-            notify_user=not bool(scan["report_email_sent_at"]),
+            notify_user=False,
             create_pdf=(scan["scan_tier"] or "full_scan") == "full_scan",
             backend_name=scan["scanner_backend"],
         )
     else:
         with get_connection() as connection:
             connection.execute(
-                "UPDATE scans SET status = ?, refreshed_at = ? WHERE id = ?",
-                (refreshed.status, utcnow().isoformat(), scan_id),
+                "UPDATE scans SET status = ?, progress_message = ?, refreshed_at = ? WHERE id = ?",
+                (refreshed.status, refreshed.message, utcnow().isoformat(), scan_id),
             )
             scan = _load_scan(connection, scan_id, user["organization_id"])
 
@@ -1906,3 +1964,37 @@ def download_report_pdf(scan_id: int, user: Row = Depends(get_current_user)) -> 
         filename=_report_path_for_scan(scan_id, scan["normalized_target"]).name,
         headers={"Cache-Control": "private, no-store, max-age=0"},
     )
+
+
+@app.post("/api/reports/{scan_id}/email", response_model=ScanSummary)
+def email_report_pdf(
+    request: Request,
+    scan_id: int,
+    user: Row = Depends(get_current_user),
+) -> ScanSummary:
+    _rate_limit(request, "reports.email", limit=6, window_seconds=60)
+    _require_owner_or_analyst(user)
+    with get_connection() as connection:
+        scan = _load_scan(connection, scan_id, user["organization_id"])
+        if scan is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
+        if (scan["scan_tier"] or "full_scan") == "free_preview":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Free vulnerability preview reports are web-only and are not emailed as PDF.",
+            )
+        report = _get_report_for_scan(scan)
+        if report is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report is not ready yet.")
+
+    updated_scan = _store_completed_scan(
+        scan_id=scan_id,
+        user=user,
+        report=report,
+        notify_user=True,
+        create_pdf=True,
+        backend_name=scan["scanner_backend"],
+    )
+    with get_connection() as connection:
+        _audit(connection, user, "report.pdf_emailed", {"scan_id": scan_id, "email": user["email"]})
+    return _summary_from_row(updated_scan)

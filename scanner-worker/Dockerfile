@@ -66,10 +66,11 @@ COPY requirements.txt requirements-greenbone.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -r requirements-greenbone.txt
 
 COPY app ./app
+COPY scanner-worker/app ./scanner_worker_app
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
 
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "scanner_worker_app.main:app", "--host", "0.0.0.0", "--port", "8000"]
