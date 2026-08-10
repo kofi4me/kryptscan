@@ -965,11 +965,16 @@ def scanner_health(user: Row = Depends(get_current_user)) -> dict:
 
 @app.post("/api/auth/request-code")
 def request_code(request: Request, payload: AuthRequest) -> dict:
-    _rate_limit(request, "auth.request_code", limit=5, window_seconds=15 * 60)
+    _rate_limit(request, "auth.request_code", limit=8, window_seconds=15 * 60)
     try:
         return auth_service.request_code(payload.email)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Verification email could not be sent. Check SMTP settings and try Resend code.",
+        ) from exc
 
 
 @app.post("/api/auth/register")
@@ -979,6 +984,11 @@ def register(request: Request, payload: RegistrationRequest) -> dict:
         result = auth_service.register_account(payload)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Registration was saved, but the verification email could not be sent. Use Resend code or check SMTP settings.",
+        ) from exc
     return result
 
 

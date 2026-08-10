@@ -14,6 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document
     .getElementById("verify-code-form")
     .addEventListener("submit", handleVerifyCode);
+  document.getElementById("resend-code-button").addEventListener("click", handleResendVerificationCode);
   document.getElementById("registration-form").addEventListener("submit", handleRegister);
   document.getElementById("register-show-password-input").addEventListener("change", toggleRegistrationPasswordVisibility);
   document.getElementById("login-form").addEventListener("submit", handleLogin);
@@ -270,12 +271,10 @@ async function handleRequestCode(event) {
   const email = document.getElementById("register-email-input").value.trim();
   state.email = email;
 
-  const response = await fetch("/api/auth/request-code", {
+  const { response, payload } = await fetchJson("/api/auth/request-code", {
     method: "POST",
-    headers: jsonHeaders(),
     body: JSON.stringify({ email }),
   });
-  const payload = await response.json();
 
   if (!response.ok) {
     setStatus("auth-status", payload.detail || "Unable to send verification code.", "error");
@@ -289,6 +288,37 @@ async function handleRequestCode(event) {
   setStatus("verify-status", message, "success");
   startVerificationTimer(payload.expires_in_seconds || 600);
   showVerificationPage();
+}
+
+async function handleResendVerificationCode() {
+  const email =
+    state.email ||
+    document.getElementById("register-email-input").value.trim() ||
+    document.getElementById("login-email-input").value.trim();
+  if (!email) {
+    setStatus("verify-status", "Enter your email on the registration or login form, then request a new code.", "error");
+    showOnly("landing-page");
+    return;
+  }
+  state.email = email;
+  const { response, payload } = await fetchJson("/api/auth/request-code", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+  if (!response.ok) {
+    setStatus("verify-status", payload.detail || "Unable to resend verification code.", "error");
+    return;
+  }
+  const isConsoleDelivery = payload.delivery === "console";
+  setStatus(
+    "verify-status",
+    isConsoleDelivery
+      ? `New verification code generated for ${payload.email}. Local testing mode is active, so read the code from the server terminal.`
+      : `New verification code sent to ${payload.email}. Check inbox and spam. It expires in 10 minutes.`,
+    "success"
+  );
+  document.getElementById("code-input").value = "";
+  startVerificationTimer(payload.expires_in_seconds || 600);
 }
 
 async function handleRegister(event) {

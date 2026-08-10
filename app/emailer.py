@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import smtplib
 from email.message import EmailMessage
+from email.utils import formataddr
 
 from app.config import Settings
 
@@ -59,7 +60,8 @@ class SmtpEmailSender(BaseEmailSender):
     def send_verification_code(self, email: str, code: str, domain: str) -> None:
         message = EmailMessage()
         message["Subject"] = f"{self.settings.app_name} verification code"
-        message["From"] = self.settings.email_from
+        message["From"] = formataddr((self.settings.email_from_name, self.settings.email_from))
+        message["Reply-To"] = self.settings.email_from
         message["To"] = email
         message.set_content(
             "Use this code to authorize your vulnerability assessment account.\n\n"
@@ -80,7 +82,8 @@ class SmtpEmailSender(BaseEmailSender):
     def send_password_reset_code(self, email: str, code: str) -> None:
         message = EmailMessage()
         message["Subject"] = f"{self.settings.app_name} password reset code"
-        message["From"] = self.settings.email_from
+        message["From"] = formataddr((self.settings.email_from_name, self.settings.email_from))
+        message["Reply-To"] = self.settings.email_from
         message["To"] = email
         message.set_content(
             "Use this code to reset your KryptNet password.\n\n"
@@ -106,7 +109,8 @@ class SmtpEmailSender(BaseEmailSender):
     ) -> None:
         message = EmailMessage()
         message["Subject"] = f"{self.settings.app_name} assessment report for {target}"
-        message["From"] = self.settings.email_from
+        message["From"] = formataddr((self.settings.email_from_name, self.settings.email_from))
+        message["Reply-To"] = self.settings.email_from
         message["To"] = email
         message.set_content(
             "Your vulnerability assessment has completed.\n\n"
