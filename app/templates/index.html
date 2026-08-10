@@ -42,20 +42,18 @@
             <div class="eyebrow">Vulnerability Assessment and Ethical Pen-Testing</div>
             <h1>Identify Vulnerabilities Before Attackers Do</h1>
             <p class="lede">
-              Every unpatched vulnerability is an open door. Cybercriminals continuously scan
-              networks, servers, cloud environments, and web applications for weaknesses.
+              KryptNet helps verified teams run professional vulnerability assessment and ethical
+              pen-testing with clear reporting, accountability, and remediation direction.
             </p>
             <p class="welcome-copy">
-              Hidden vulnerabilities can lead to ransomware attacks, data breaches, service
-              disruptions, regulatory penalties, and reputational damage. Kryptnet helps
-              businesses, MSPs, and security professionals discover security gaps, prioritize
-              critical risks, and strengthen defenses before attackers exploit them.
+              Register once, verify your email, choose a service, and receive a client-ready PDF
+              report after testing.
             </p>
             <div class="hero-statement-grid" aria-label="Security outcomes">
-              <span>Expose risky services before they are targeted</span>
-              <span>Prioritize critical vulnerabilities first</span>
-              <span>Protect client data and business operations</span>
-              <span>Strengthen compliance and security posture</span>
+              <span>Verified users only</span>
+              <span>Full PDF reporting</span>
+              <span>Scanner-backed testing</span>
+              <span>AI-assisted prioritization</span>
             </div>
           </div>
 
@@ -98,19 +96,85 @@
               </div>
             </figure>
 
-            <article id="email-entry" class="email-gate" aria-labelledby="email-gate-title">
-              <div class="eyebrow">Start Scanning Here</div>
-              <h2 id="email-gate-title">Verify your email to continue.</h2>
-              <form id="request-code-form" class="stack">
+            <article id="account-entry" class="email-gate account-console" aria-labelledby="account-console-title">
+              <div class="eyebrow">Secure Client Access</div>
+              <h2 id="account-console-title">Create your KryptNet account.</h2>
+              <form id="registration-form" class="stack">
+                <div class="form-grid compact">
+                  <label>
+                    <span>Full name</span>
+                    <input id="register-name-input" type="text" placeholder="Jane Doe" required />
+                  </label>
+                  <label>
+                    <span>Email</span>
+                    <input id="register-email-input" type="email" placeholder="security@example.com" required />
+                  </label>
+                  <label>
+                    <span>Password</span>
+                    <input id="register-password-input" type="password" placeholder="12+ characters" minlength="12" required />
+                  </label>
+                  <label>
+                    <span>Confirm password</span>
+                    <input id="register-password-confirm-input" type="password" placeholder="Confirm password" minlength="12" required />
+                  </label>
+                  <label>
+                    <span>Title</span>
+                    <input id="register-title-input" type="text" placeholder="Security Manager" required />
+                  </label>
+                  <label>
+                    <span>Role</span>
+                    <input id="register-role-input" type="text" placeholder="IT professional, MSP owner, consultant" required />
+                  </label>
+                  <label>
+                    <span>Company</span>
+                    <input id="register-company-input" type="text" placeholder="Example Company" required />
+                  </label>
+                  <label>
+                    <span>Phone number</span>
+                    <input id="register-phone-input" type="tel" placeholder="+1 555 010 1234" required />
+                  </label>
+                </div>
                 <label>
-                  <span>Insert Email</span>
-                  <input id="email-input" type="email" placeholder="security@example.com" required />
+                  <span>Company address</span>
+                  <input id="register-address-input" type="text" placeholder="Street, city, state, country" required />
                 </label>
-                <button type="submit">Email Verification</button>
+                <label>
+                  <span>Date of birth <small>optional</small></span>
+                  <input id="register-dob-input" type="date" />
+                </label>
+                <label>
+                  <span>Reason for testing</span>
+                  <textarea id="register-reason-input" placeholder="Briefly describe why you need vulnerability assessment or ethical pen-testing." required></textarea>
+                </label>
+                <label class="check-option">
+                  <input id="register-data-protection-input" type="checkbox" required />
+                  <span>I accept KryptNet's data protection agreement for secure handling of my registration, assessment, and report information.</span>
+                </label>
+                <label class="check-option">
+                  <input id="register-safe-use-input" type="checkbox" required />
+                  <span>I confirm I will only test systems I own or am authorized to test.</span>
+                </label>
+                <button type="submit">Register and Send Verification Code</button>
               </form>
               <div id="auth-status" class="status-card neutral">
-                Enter your email to receive a verification code and begin registration.
+                Register with your real details. A verification code will be sent to the email used here.
               </div>
+
+              <div class="login-divider"><span>Returning user</span></div>
+              <form id="login-form" class="stack login-stack">
+                <label>
+                  <span>Email</span>
+                  <input id="login-email-input" type="email" placeholder="security@example.com" required />
+                </label>
+                <label>
+                  <span>Password</span>
+                  <input id="login-password-input" type="password" placeholder="Your password" required />
+                </label>
+                <div class="auth-actions">
+                  <button type="submit">Log In</button>
+                  <button id="forgot-password-button" type="button" class="ghost">Reset Password</button>
+                </div>
+              </form>
             </article>
           </div>
         </article>
@@ -164,66 +228,47 @@
         </article>
       </section>
 
-      <section id="registration-page" class="customer-gate hidden">
+      <section id="password-reset-page" class="customer-gate hidden">
         <article class="panel welcome-panel">
-          <div class="eyebrow">User Accountability</div>
-          <h1>Complete your user profile.</h1>
+          <div class="eyebrow">Account Recovery</div>
+          <h1>Reset your password securely.</h1>
           <p class="lede">
-            Kryptnet requires verified identity and safe-use acceptance before any security testing
-            service can be selected or paid for.
+            KryptNet sends a short-lived reset code to your registered email. The code expires
+            after 10 minutes.
           </p>
           <p class="welcome-copy">
-            This helps prevent abuse and keeps vulnerability assessment and ethical pen-testing tied
-            to a real person, company, purpose, and accepted rules of safe use.
+            Use a strong password with uppercase, lowercase, a number, and a symbol.
           </p>
         </article>
 
         <article class="panel auth-panel">
           <div class="section-head">
             <div>
-              <div class="eyebrow">Registration</div>
-              <h2>Tell us who is using the tool.</h2>
+              <div class="eyebrow">Password Reset</div>
+              <h2>Recover account access.</h2>
             </div>
           </div>
-          <form id="registration-form" class="stack">
-            <div class="form-grid">
-              <label>
-                <span>Full name</span>
-                <input id="register-name-input" type="text" placeholder="Jane Doe" required />
-              </label>
-              <label>
-                <span>Title</span>
-                <input id="register-title-input" type="text" placeholder="Security Manager" required />
-              </label>
-              <label>
-                <span>Role</span>
-                <input id="register-role-input" type="text" placeholder="IT professional, MSP owner, consultant" required />
-              </label>
-              <label>
-                <span>Company</span>
-                <input id="register-company-input" type="text" placeholder="Example Company" required />
-              </label>
-              <label>
-                <span>Phone number</span>
-                <input id="register-phone-input" type="tel" placeholder="+1 555 010 1234" required />
-              </label>
-              <label>
-                <span>Company address</span>
-                <input id="register-address-input" type="text" placeholder="Street, city, state, country" required />
-              </label>
-            </div>
+          <form id="password-reset-request-form" class="stack">
             <label>
-              <span>Reason for testing</span>
-              <textarea id="register-reason-input" placeholder="Describe why you are testing this system and your relationship to it." required></textarea>
+              <span>Registered email</span>
+              <input id="reset-email-input" type="email" placeholder="security@example.com" required />
             </label>
-            <label class="check-option">
-              <input id="register-safe-use-input" type="checkbox" required />
-              <span>I confirm I will only test systems I own or am authorized to test, and I accept safe, non-abusive use of Kryptnet.</span>
-            </label>
-            <button type="submit">Complete Registration</button>
+            <button type="submit">Send Reset Code</button>
           </form>
-          <div id="registration-status" class="status-card neutral">
-            Complete registration before selecting a service.
+          <form id="password-reset-confirm-form" class="stack">
+            <label>
+              <span>Reset code</span>
+              <input id="reset-code-input" type="text" inputmode="numeric" maxlength="6" placeholder="123456" required />
+            </label>
+            <label>
+              <span>New password</span>
+              <input id="reset-password-input" type="password" placeholder="12+ characters" minlength="12" required />
+            </label>
+            <button type="submit">Reset Password</button>
+            <button id="back-to-login-button" type="button" class="ghost">Back to Login</button>
+          </form>
+          <div id="password-reset-status" class="status-card neutral">
+            Enter your registered email to receive a reset code.
           </div>
         </article>
       </section>

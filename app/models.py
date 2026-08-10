@@ -14,6 +14,36 @@ class AuthVerifyRequest(BaseModel):
     code: str = Field(min_length=6, max_length=6)
 
 
+class RegistrationRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=12, max_length=128)
+    full_name: str = Field(min_length=2, max_length=160)
+    job_title: str = Field(min_length=2, max_length=120)
+    professional_role: str = Field(min_length=2, max_length=120)
+    company_name: str = Field(min_length=2, max_length=180)
+    company_address: str = Field(min_length=5, max_length=300)
+    phone_number: str = Field(min_length=7, max_length=40)
+    date_of_birth: str | None = Field(default=None, max_length=20)
+    testing_reason: str = Field(min_length=10, max_length=1000)
+    data_protection_accepted: bool
+    safe_use_accepted: bool
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=1, max_length=128)
+
+
+class PasswordResetRequest(BaseModel):
+    email: str
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    email: str
+    code: str = Field(min_length=6, max_length=6)
+    new_password: str = Field(min_length=12, max_length=128)
+
+
 class RegistrationProfileRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=160)
     job_title: str = Field(min_length=2, max_length=120)
@@ -21,7 +51,9 @@ class RegistrationProfileRequest(BaseModel):
     company_name: str = Field(min_length=2, max_length=180)
     company_address: str = Field(min_length=5, max_length=300)
     phone_number: str = Field(min_length=7, max_length=40)
+    date_of_birth: str | None = Field(default=None, max_length=20)
     testing_reason: str = Field(min_length=10, max_length=1000)
+    data_protection_accepted: bool = False
     safe_use_accepted: bool
 
 

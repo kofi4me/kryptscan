@@ -10,6 +10,9 @@ class BaseEmailSender:
     def send_verification_code(self, email: str, code: str, domain: str) -> None:
         raise NotImplementedError
 
+    def send_password_reset_code(self, email: str, code: str) -> None:
+        raise NotImplementedError
+
     def send_assessment_report(
         self,
         email: str,
@@ -30,6 +33,9 @@ class ConsoleEmailSender(BaseEmailSender):
             f"[{self.settings.app_name}] Verification code for {email} "
             f"(authorized domain {domain}): {code}"
         )
+
+    def send_password_reset_code(self, email: str, code: str) -> None:
+        print(f"[{self.settings.app_name}] Password reset code for {email}: {code}")
 
     def send_assessment_report(
         self,
@@ -61,6 +67,25 @@ class SmtpEmailSender(BaseEmailSender):
             f"Authorized domain: {domain}\n\n"
             "This code expires in 10 minutes.\n\n"
             "If you did not request this code, ignore this message."
+        )
+
+        smtp_factory = smtplib.SMTP_SSL if self.settings.smtp_use_ssl else smtplib.SMTP
+        with smtp_factory(self.settings.smtp_host, self.settings.smtp_port, timeout=30) as smtp:
+            if self.settings.smtp_use_tls and not self.settings.smtp_use_ssl:
+                smtp.starttls()
+            if self.settings.smtp_username:
+                smtp.login(self.settings.smtp_username, self.settings.smtp_password)
+            smtp.send_message(message)
+
+    def send_password_reset_code(self, email: str, code: str) -> None:
+        message = EmailMessage()
+        message["Subject"] = f"{self.settings.app_name} password reset code"
+        message["From"] = self.settings.email_from
+        message["To"] = email
+        message.set_content(
+            "Use this code to reset your KryptNet password.\n\n"
+            f"Password reset code: {code}\n\n"
+            "This code expires in 10 minutes. If you did not request it, ignore this message."
         )
 
         smtp_factory = smtplib.SMTP_SSL if self.settings.smtp_use_ssl else smtplib.SMTP

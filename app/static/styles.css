@@ -39,9 +39,10 @@ body {
   color: var(--ink);
   font-family: "Manrope", "Segoe UI", sans-serif;
   background:
-    radial-gradient(circle at top left, rgba(47, 99, 255, 0.14), transparent 28%),
-    radial-gradient(circle at 88% 12%, rgba(255, 122, 69, 0.14), transparent 24%),
-    linear-gradient(180deg, #f8f3ea 0%, #edf5ff 58%, #f7f1e9 100%);
+    radial-gradient(circle at 9% 8%, rgba(47, 99, 255, 0.22), transparent 26%),
+    radial-gradient(circle at 78% 5%, rgba(255, 122, 69, 0.2), transparent 24%),
+    radial-gradient(circle at 55% 72%, rgba(42, 181, 127, 0.14), transparent 30%),
+    linear-gradient(180deg, #f7faff 0%, #fff7ee 48%, #eef8ff 100%);
 }
 
 .page-aura {
@@ -192,6 +193,11 @@ h4 {
   align-items: center;
   gap: clamp(1.25rem, 2.6vw, 2.4rem);
   padding: clamp(1.2rem, 2.6vw, 2.4rem);
+  background:
+    radial-gradient(circle at 13% 18%, rgba(47, 99, 255, 0.3), transparent 28%),
+    radial-gradient(circle at 86% 10%, rgba(255, 122, 69, 0.22), transparent 24%),
+    linear-gradient(135deg, #101a2e 0%, #17284a 48%, #0c2531 100%);
+  color: #f7f9fc;
 }
 
 .landing-hero h1 {
@@ -421,6 +427,14 @@ h4 {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.account-console {
+  max-height: 72vh;
+  overflow: auto;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.07)),
+    rgba(7, 19, 34, 0.72);
+}
+
 .email-gate h2 {
   max-width: 20ch;
   font-size: clamp(1.25rem, 1.7vw, 1.65rem);
@@ -434,6 +448,60 @@ h4 {
 .email-gate input {
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.96);
+}
+
+.email-gate textarea {
+  min-height: 76px;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.form-grid.compact {
+  gap: 0.7rem;
+}
+
+.form-grid.compact input,
+.account-console textarea {
+  padding: 0.76rem 0.82rem;
+  border-radius: 14px;
+}
+
+.account-console label span small {
+  color: rgba(241, 246, 255, 0.62);
+  font-size: 0.76rem;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: rgba(241, 246, 255, 0.74);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.74rem;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.login-stack {
+  padding: 0.75rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.auth-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.7rem;
+  align-items: center;
 }
 
 .email-gate .status-card.neutral {

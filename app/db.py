@@ -28,8 +28,15 @@ CREATE TABLE IF NOT EXISTS users (
     company_address TEXT,
     phone_number TEXT,
     testing_reason TEXT,
+    date_of_birth TEXT,
+    data_protection_accepted INTEGER NOT NULL DEFAULT 0,
+    data_protection_accepted_at TEXT,
     safe_use_accepted INTEGER NOT NULL DEFAULT 0,
     profile_completed_at TEXT,
+    password_hash TEXT,
+    password_changed_at TEXT,
+    failed_login_count INTEGER NOT NULL DEFAULT 0,
+    locked_until TEXT,
     role TEXT NOT NULL DEFAULT 'owner',
     is_verified INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
@@ -68,6 +75,15 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 
 CREATE TABLE IF NOT EXISTS email_verifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    consumed_at TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS password_resets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL,
     code_hash TEXT NOT NULL,
@@ -183,6 +199,7 @@ def init_db() -> None:
         _ensure_scan_columns(connection)
         _ensure_table(connection, "entitlements")
         _ensure_table(connection, "payments")
+        _ensure_table(connection, "password_resets")
         _ensure_table(connection, "engagements")
         _ensure_table(connection, "manual_findings")
         _ensure_table(connection, "audit_events")
@@ -202,8 +219,15 @@ def _ensure_user_columns(connection: sqlite3.Connection) -> None:
         "company_address": "TEXT",
         "phone_number": "TEXT",
         "testing_reason": "TEXT",
+        "date_of_birth": "TEXT",
+        "data_protection_accepted": "INTEGER NOT NULL DEFAULT 0",
+        "data_protection_accepted_at": "TEXT",
         "safe_use_accepted": "INTEGER NOT NULL DEFAULT 0",
         "profile_completed_at": "TEXT",
+        "password_hash": "TEXT",
+        "password_changed_at": "TEXT",
+        "failed_login_count": "INTEGER NOT NULL DEFAULT 0",
+        "locked_until": "TEXT",
     }
     for column_name, column_type in required_columns.items():
         if column_name not in columns:

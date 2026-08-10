@@ -12,12 +12,14 @@ const state = {
 
 document.addEventListener("DOMContentLoaded", () => {
   document
-    .getElementById("request-code-form")
-    .addEventListener("submit", handleRequestCode);
-  document
     .getElementById("verify-code-form")
     .addEventListener("submit", handleVerifyCode);
-  document.getElementById("registration-form").addEventListener("submit", handleCompleteRegistration);
+  document.getElementById("registration-form").addEventListener("submit", handleRegister);
+  document.getElementById("login-form").addEventListener("submit", handleLogin);
+  document.getElementById("forgot-password-button").addEventListener("click", showPasswordResetPage);
+  document.getElementById("back-to-login-button").addEventListener("click", () => showOnly("landing-page"));
+  document.getElementById("password-reset-request-form").addEventListener("submit", handlePasswordResetRequest);
+  document.getElementById("password-reset-confirm-form").addEventListener("submit", handlePasswordResetConfirm);
   document.getElementById("scan-form").addEventListener("submit", handleCreateScan);
   document.getElementById("manual-finding-form").addEventListener("submit", handleAddManualFinding);
   document.querySelectorAll("[data-plan]").forEach((button) => {
@@ -60,7 +62,7 @@ function jsonHeaders() {
 }
 
 function showOnly(sectionId) {
-  ["landing-page", "verification-page", "registration-page", "tool-choice-page", "dashboard"].forEach((id) => {
+  ["landing-page", "verification-page", "password-reset-page", "tool-choice-page", "dashboard"].forEach((id) => {
     const element = document.getElementById(id);
     if (element) element.classList.toggle("hidden", id !== sectionId);
   });
@@ -76,9 +78,9 @@ function showToolChoicePage() {
   window.location.hash = "choose-tool";
 }
 
-function showRegistrationPage() {
-  showOnly("registration-page");
-  window.location.hash = "register";
+function showPasswordResetPage() {
+  showOnly("password-reset-page");
+  window.location.hash = "reset-password";
 }
 
 function showDashboardPage() {
@@ -225,7 +227,7 @@ async function handleCheckoutPlan(plan) {
 
 async function handleRequestCode(event) {
   event.preventDefault();
-  const email = document.getElementById("email-input").value.trim();
+  const email = document.getElementById("register-email-input").value.trim();
   state.email = email;
 
   const response = await fetch("/api/auth/request-code", {
@@ -249,10 +251,80 @@ async function handleRequestCode(event) {
   showVerificationPage();
 }
 
+async function handleRegister(event) {
+  event.preventDefault();
+  const password = document.getElementById("register-password-input").value;
+  const confirmPassword = document.getElementById("register-password-confirm-input").value;
+  const email = document.getElementById("register-email-input").value.trim();
+  state.email = email;
+  if (password !== confirmPassword) {
+    setStatus("auth-status", "Passwords do not match.", "error");
+    return;
+  }
+
+  const response = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      email,
+      password,
+      full_name: document.getElementById("register-name-input").value.trim(),
+      job_title: document.getElementById("register-title-input").value.trim(),
+      professional_role: document.getElementById("register-role-input").value.trim(),
+      company_name: document.getElementById("register-company-input").value.trim(),
+      company_address: document.getElementById("register-address-input").value.trim(),
+      phone_number: document.getElementById("register-phone-input").value.trim(),
+      date_of_birth: document.getElementById("register-dob-input").value || null,
+      testing_reason: document.getElementById("register-reason-input").value.trim(),
+      data_protection_accepted: document.getElementById("register-data-protection-input").checked,
+      safe_use_accepted: document.getElementById("register-safe-use-input").checked,
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    setStatus("auth-status", payload.detail || "Unable to complete registration.", "error");
+    return;
+  }
+  setStatus(
+    "verify-status",
+    `Registration received. Verification code sent to ${payload.email}. It expires in 10 minutes.`,
+    "success"
+  );
+  startVerificationTimer(payload.expires_in_seconds || 600);
+  showVerificationPage();
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  const email = document.getElementById("login-email-input").value.trim();
+  state.email = email;
+  const response = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      email,
+      password: document.getElementById("login-password-input").value,
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    if (response.status === 403 && String(payload.detail || "").includes("verification")) {
+      setStatus("verify-status", payload.detail, "neutral");
+      startVerificationTimer(600);
+      showVerificationPage();
+      return;
+    }
+    setStatus("auth-status", payload.detail || "Unable to log in.", "error");
+    return;
+  }
+  setStatus("auth-status", "Login successful.", "success");
+  await loadDashboard(false, { showChoiceWhenAuthenticated: true });
+}
+
 async function handleVerifyCode(event) {
   event.preventDefault();
   const code = document.getElementById("code-input").value.trim();
-  const email = document.getElementById("email-input").value.trim() || state.email;
+  const email = state.email || document.getElementById("register-email-input").value.trim() || document.getElementById("login-email-input").value.trim();
 
   const response = await fetch("/api/auth/verify", {
     method: "POST",
@@ -287,7 +359,9 @@ async function handleCompleteRegistration(event) {
       company_name: document.getElementById("register-company-input").value.trim(),
       company_address: document.getElementById("register-address-input").value.trim(),
       phone_number: document.getElementById("register-phone-input").value.trim(),
+      date_of_birth: document.getElementById("register-dob-input").value || null,
       testing_reason: document.getElementById("register-reason-input").value.trim(),
+      data_protection_accepted: document.getElementById("register-data-protection-input").checked,
       safe_use_accepted: document.getElementById("register-safe-use-input").checked,
     }),
   });
@@ -297,6 +371,43 @@ async function handleCompleteRegistration(event) {
     return;
   }
   setStatus("registration-status", "Registration completed. Choose a service to continue.", "success");
+  await loadDashboard(false, { showChoiceWhenAuthenticated: true });
+}
+
+async function handlePasswordResetRequest(event) {
+  event.preventDefault();
+  const email = document.getElementById("reset-email-input").value.trim();
+  state.email = email;
+  const response = await fetch("/api/auth/password-reset/request", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ email }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    setStatus("password-reset-status", payload.detail || "Unable to send reset code.", "error");
+    return;
+  }
+  setStatus("password-reset-status", "If the account exists, a reset code has been sent. The code expires in 10 minutes.", "success");
+}
+
+async function handlePasswordResetConfirm(event) {
+  event.preventDefault();
+  const response = await fetch("/api/auth/password-reset/confirm", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      email: document.getElementById("reset-email-input").value.trim() || state.email,
+      code: document.getElementById("reset-code-input").value.trim(),
+      new_password: document.getElementById("reset-password-input").value,
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    setStatus("password-reset-status", payload.detail || "Unable to reset password.", "error");
+    return;
+  }
+  setStatus("password-reset-status", "Password reset successful. Choose a testing option to continue.", "success");
   await loadDashboard(false, { showChoiceWhenAuthenticated: true });
 }
 
@@ -398,7 +509,7 @@ async function loadDashboard(showStatus = false, options = {}) {
     showDashboardPage();
     await loadClientPortal();
   } else if (!payload.user?.profile_complete) {
-    showRegistrationPage();
+    showOnly("landing-page");
   } else if (options.showChoiceWhenAuthenticated) {
     showToolChoicePage();
   } else {

@@ -24,6 +24,27 @@ def hash_verification_code(secret: str, email: str, code: str) -> str:
     return hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
 
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 210_000)
+    return f"pbkdf2_sha256$210000${_b64url_encode(salt)}${_b64url_encode(digest)}"
+
+
+def verify_password(password: str, password_hash: str | None) -> bool:
+    if not password_hash:
+        return False
+    try:
+        algorithm, iterations, salt_raw, digest_raw = password_hash.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        salt = _b64url_decode(salt_raw)
+        expected = _b64url_decode(digest_raw)
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, int(iterations))
+    except (ValueError, TypeError):
+        return False
+    return hmac.compare_digest(actual, expected)
+
+
 def mask_email(email: str) -> str:
     local, domain = email.split("@", 1)
     if len(local) <= 2:

@@ -35,8 +35,12 @@ from app.models import (
     MemberSummary,
     PaymentCheckoutRequest,
     PaymentIntentRequest,
+    LoginRequest,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
     PaymentSummary,
     PaymentWebhookRequest,
+    RegistrationRequest,
     RegistrationProfileRequest,
     ScanCreateRequest,
     ScanSummary,
@@ -208,7 +212,12 @@ def _require_target_network_policy(normalized_target: str, target_kind: str) -> 
 
 
 def _serialize_user(user: Row) -> dict:
-    profile_complete = bool(user["profile_completed_at"]) and bool(user["safe_use_accepted"])
+    profile_complete = (
+        bool(user["profile_completed_at"])
+        and bool(user["safe_use_accepted"])
+        and bool(user["data_protection_accepted"])
+        and bool(user["password_hash"])
+    )
     return {
         "id": user["id"],
         "email": user["email"],
@@ -219,7 +228,9 @@ def _serialize_user(user: Row) -> dict:
         "company_name": user["company_name"],
         "company_address": user["company_address"],
         "phone_number": user["phone_number"],
+        "date_of_birth": user["date_of_birth"],
         "testing_reason": user["testing_reason"],
+        "data_protection_accepted": bool(user["data_protection_accepted"]),
         "safe_use_accepted": bool(user["safe_use_accepted"]),
         "profile_complete": profile_complete,
         "organization_id": user["organization_id"],
@@ -397,10 +408,10 @@ def _require_owner(user: Row) -> None:
 
 
 def _require_completed_registration(user: Row) -> None:
-    if not user["profile_completed_at"] or not bool(user["safe_use_accepted"]):
+    if not user["profile_completed_at"] or not bool(user["safe_use_accepted"]) or not bool(user["data_protection_accepted"]) or not user["password_hash"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Complete registration profile and safe-use acceptance before using services.",
+            detail="Complete registration, password setup, data protection agreement, and safe-use acceptance before using services.",
         )
 
 
@@ -952,6 +963,66 @@ def request_code(request: Request, payload: AuthRequest) -> dict:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
+@app.post("/api/auth/register")
+def register(request: Request, payload: RegistrationRequest) -> dict:
+    _rate_limit(request, "auth.register", limit=5, window_seconds=15 * 60)
+    try:
+        result = auth_service.register_account(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return result
+
+
+@app.post("/api/auth/login")
+def login(request: Request, payload: LoginRequest) -> Response:
+    _rate_limit(request, "auth.login", limit=8, window_seconds=15 * 60)
+    try:
+        user = auth_service.login(payload.email, payload.password)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+
+    token = create_session_token(settings, int(user["id"]), user["email"])
+    response = JSONResponse({"message": "Login successful.", "user": _serialize_user(user)})
+    response.set_cookie(
+        settings.session_cookie_name,
+        token,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite="lax",
+        max_age=int(timedelta(hours=settings.session_ttl_hours).total_seconds()),
+    )
+    return response
+
+
+@app.post("/api/auth/password-reset/request")
+def request_password_reset(request: Request, payload: PasswordResetRequest) -> dict:
+    _rate_limit(request, "auth.password_reset_request", limit=5, window_seconds=15 * 60)
+    return auth_service.request_password_reset(payload.email)
+
+
+@app.post("/api/auth/password-reset/confirm")
+def confirm_password_reset(request: Request, payload: PasswordResetConfirmRequest) -> Response:
+    _rate_limit(request, "auth.password_reset_confirm", limit=8, window_seconds=15 * 60)
+    try:
+        user = auth_service.reset_password(payload.email, payload.code, payload.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    token = create_session_token(settings, int(user["id"]), user["email"])
+    response = JSONResponse({"message": "Password reset successful.", "user": _serialize_user(user)})
+    response.set_cookie(
+        settings.session_cookie_name,
+        token,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite="lax",
+        max_age=int(timedelta(hours=settings.session_ttl_hours).total_seconds()),
+    )
+    return response
+
+
 @app.post("/api/auth/verify")
 def verify_code(request: Request, payload: AuthVerifyRequest) -> Response:
     _rate_limit(request, "auth.verify_code", limit=10, window_seconds=15 * 60)
@@ -992,6 +1063,11 @@ def complete_registration(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Safe-use acceptance is required.",
         )
+    if not payload.data_protection_accepted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Data protection agreement acceptance is required.",
+        )
     now = utcnow().isoformat()
     with get_connection() as connection:
         connection.execute(
@@ -1003,7 +1079,10 @@ def complete_registration(
                 company_name = ?,
                 company_address = ?,
                 phone_number = ?,
+                date_of_birth = ?,
                 testing_reason = ?,
+                data_protection_accepted = 1,
+                data_protection_accepted_at = COALESCE(data_protection_accepted_at, ?),
                 safe_use_accepted = 1,
                 profile_completed_at = ?
             WHERE id = ? AND organization_id = ?
@@ -1015,7 +1094,9 @@ def complete_registration(
                 payload.company_name.strip(),
                 payload.company_address.strip(),
                 payload.phone_number.strip(),
+                (payload.date_of_birth or "").strip(),
                 payload.testing_reason.strip(),
+                now,
                 now,
                 user["id"],
                 user["organization_id"],
