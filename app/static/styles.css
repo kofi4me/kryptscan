@@ -1039,6 +1039,14 @@ button.ghost {
   line-height: 1.45;
 }
 
+.check-option span {
+  color: rgba(245, 249, 255, 0.9);
+}
+
+.compact-check {
+  width: fit-content;
+}
+
 .check-option input {
   width: 18px;
   height: 18px;
@@ -1217,21 +1225,21 @@ textarea {
 }
 
 .status-card.success {
-  background: rgba(42, 181, 127, 0.12);
-  border-color: rgba(42, 181, 127, 0.22);
-  color: #14583f;
+  background: rgba(42, 181, 127, 0.18);
+  border-color: rgba(42, 181, 127, 0.32);
+  color: #d8fff0;
 }
 
 .status-card.error {
-  background: rgba(217, 75, 55, 0.1);
-  border-color: rgba(217, 75, 55, 0.2);
-  color: #7a2d22;
+  background: rgba(217, 75, 55, 0.18);
+  border-color: rgba(255, 126, 104, 0.34);
+  color: #ffd8d2;
 }
 
 .status-card.neutral {
-  background: rgba(47, 99, 255, 0.08);
-  border-color: rgba(47, 99, 255, 0.16);
-  color: #143990;
+  background: rgba(47, 99, 255, 0.14);
+  border-color: rgba(47, 99, 255, 0.24);
+  color: #eaf0ff;
 }
 
 .ops-rail {

@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
     .getElementById("verify-code-form")
     .addEventListener("submit", handleVerifyCode);
   document.getElementById("registration-form").addEventListener("submit", handleRegister);
+  document.getElementById("register-show-password-input").addEventListener("change", toggleRegistrationPasswordVisibility);
   document.getElementById("login-form").addEventListener("submit", handleLogin);
   document.getElementById("forgot-password-button").addEventListener("click", showPasswordResetPage);
   document.getElementById("back-to-login-button").addEventListener("click", () => showOnly("landing-page"));
@@ -39,7 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-choice-mode]").forEach((button) => {
     button.addEventListener("click", () => openSelectedTool(button.dataset.choiceMode));
   });
-  loadDashboard(false, { showChoiceWhenAuthenticated: true });
+  ensureCsrfCookie().then(() => loadDashboard(false, { showChoiceWhenAuthenticated: true }));
 });
 
 function getCookie(name) {
@@ -59,6 +60,37 @@ function csrfHeaders() {
 
 function jsonHeaders() {
   return { "Content-Type": "application/json", ...csrfHeaders() };
+}
+
+async function ensureCsrfCookie() {
+  if (getCookie("kryptnet_csrf")) return;
+  await fetch("/", { method: "GET", cache: "no-store" });
+}
+
+async function fetchJson(url, options = {}, retryOnCsrf = true) {
+  await ensureCsrfCookie();
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      ...jsonHeaders(),
+    },
+  });
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch (_error) {
+    payload = {};
+  }
+  if (
+    retryOnCsrf &&
+    response.status === 403 &&
+    String(payload.detail || "").toLowerCase().includes("csrf")
+  ) {
+    await fetch("/", { method: "GET", cache: "reload" });
+    return fetchJson(url, options, false);
+  }
+  return { response, payload };
 }
 
 function showOnly(sectionId) {
@@ -91,6 +123,14 @@ function showDashboardPage() {
 function openSelectedTool(mode) {
   selectAssessmentMode(mode);
   showDashboardPage();
+}
+
+function toggleRegistrationPasswordVisibility() {
+  const visible = document.getElementById("register-show-password-input").checked;
+  ["register-password-input", "register-password-confirm-input"].forEach((id) => {
+    const input = document.getElementById(id);
+    if (input) input.type = visible ? "text" : "password";
+  });
 }
 
 function selectAssessmentMode(mode) {
@@ -262,9 +302,8 @@ async function handleRegister(event) {
     return;
   }
 
-  const response = await fetch("/api/auth/register", {
+  const { response, payload } = await fetchJson("/api/auth/register", {
     method: "POST",
-    headers: jsonHeaders(),
     body: JSON.stringify({
       email,
       password,
@@ -280,7 +319,6 @@ async function handleRegister(event) {
       safe_use_accepted: document.getElementById("register-safe-use-input").checked,
     }),
   });
-  const payload = await response.json();
   if (!response.ok) {
     setStatus("auth-status", payload.detail || "Unable to complete registration.", "error");
     return;
@@ -298,15 +336,13 @@ async function handleLogin(event) {
   event.preventDefault();
   const email = document.getElementById("login-email-input").value.trim();
   state.email = email;
-  const response = await fetch("/api/auth/login", {
+  const { response, payload } = await fetchJson("/api/auth/login", {
     method: "POST",
-    headers: jsonHeaders(),
     body: JSON.stringify({
       email,
       password: document.getElementById("login-password-input").value,
     }),
   });
-  const payload = await response.json();
   if (!response.ok) {
     if (response.status === 403 && String(payload.detail || "").includes("verification")) {
       setStatus("verify-status", payload.detail, "neutral");
@@ -326,12 +362,10 @@ async function handleVerifyCode(event) {
   const code = document.getElementById("code-input").value.trim();
   const email = state.email || document.getElementById("register-email-input").value.trim() || document.getElementById("login-email-input").value.trim();
 
-  const response = await fetch("/api/auth/verify", {
+  const { response, payload } = await fetchJson("/api/auth/verify", {
     method: "POST",
-    headers: jsonHeaders(),
     body: JSON.stringify({ email, code }),
   });
-  const payload = await response.json();
 
   if (!response.ok) {
     setStatus("verify-status", payload.detail || "Verification failed.", "error");
@@ -349,9 +383,8 @@ async function handleVerifyCode(event) {
 
 async function handleCompleteRegistration(event) {
   event.preventDefault();
-  const response = await fetch("/api/auth/complete-registration", {
+  const { response, payload } = await fetchJson("/api/auth/complete-registration", {
     method: "POST",
-    headers: jsonHeaders(),
     body: JSON.stringify({
       full_name: document.getElementById("register-name-input").value.trim(),
       job_title: document.getElementById("register-title-input").value.trim(),
@@ -365,7 +398,6 @@ async function handleCompleteRegistration(event) {
       safe_use_accepted: document.getElementById("register-safe-use-input").checked,
     }),
   });
-  const payload = await response.json();
   if (!response.ok) {
     setStatus("registration-status", payload.detail || "Unable to complete registration.", "error");
     return;
@@ -378,12 +410,10 @@ async function handlePasswordResetRequest(event) {
   event.preventDefault();
   const email = document.getElementById("reset-email-input").value.trim();
   state.email = email;
-  const response = await fetch("/api/auth/password-reset/request", {
+  const { response, payload } = await fetchJson("/api/auth/password-reset/request", {
     method: "POST",
-    headers: jsonHeaders(),
     body: JSON.stringify({ email }),
   });
-  const payload = await response.json();
   if (!response.ok) {
     setStatus("password-reset-status", payload.detail || "Unable to send reset code.", "error");
     return;
@@ -393,16 +423,14 @@ async function handlePasswordResetRequest(event) {
 
 async function handlePasswordResetConfirm(event) {
   event.preventDefault();
-  const response = await fetch("/api/auth/password-reset/confirm", {
+  const { response, payload } = await fetchJson("/api/auth/password-reset/confirm", {
     method: "POST",
-    headers: jsonHeaders(),
     body: JSON.stringify({
       email: document.getElementById("reset-email-input").value.trim() || state.email,
       code: document.getElementById("reset-code-input").value.trim(),
       new_password: document.getElementById("reset-password-input").value,
     }),
   });
-  const payload = await response.json();
   if (!response.ok) {
     setStatus("password-reset-status", payload.detail || "Unable to reset password.", "error");
     return;
@@ -440,12 +468,10 @@ async function handleCreateScan(event) {
     body.known_vulnerabilities = document.getElementById("known-vulnerabilities-input").value.trim() || null;
   }
 
-  const response = await fetch("/api/scans", {
+  const { response, payload } = await fetchJson("/api/scans", {
     method: "POST",
-    headers: jsonHeaders(),
     body: JSON.stringify(body),
   });
-  const payload = await response.json();
 
   if (!response.ok) {
     setStatus("dashboard-status", payload.detail || "Unable to launch assessment.", "error");

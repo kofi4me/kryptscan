@@ -175,10 +175,19 @@ def _verify_csrf_request(request: Request) -> JSONResponse | None:
     cookie_token = request.cookies.get(settings.csrf_cookie_name)
     header_token = request.headers.get("x-csrf-token")
     if cookie_token != header_token or not verify_csrf_token(settings, header_token):
-        return JSONResponse(
+        response = JSONResponse(
             {"detail": "CSRF token validation failed."},
             status_code=status.HTTP_403_FORBIDDEN,
         )
+        response.set_cookie(
+            settings.csrf_cookie_name,
+            create_csrf_token(settings),
+            httponly=False,
+            secure=settings.session_cookie_secure,
+            samesite="lax",
+            max_age=int(timedelta(hours=settings.session_ttl_hours).total_seconds()),
+        )
+        return response
     return None
 
 
