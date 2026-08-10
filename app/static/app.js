@@ -735,7 +735,7 @@ function renderReport(report) {
   document
     .getElementById("report-email-button")
     .classList.toggle("hidden", !activeScan?.report_pdf_available || activeScan?.scan_tier === "free_preview");
-  document.getElementById("executive-summary").textContent = report.executive_summary;
+  renderReportCockpit(report, activeScan);
 
   renderBars("severity-chart", [
     { label: "Critical", value: report.severity_counts.critical, color: "#d94b37" },
@@ -757,7 +757,7 @@ function renderReport(report) {
   document.getElementById("checks-list").innerHTML = report.compliance_checks
     .map(
       (check) => `
-        <article class="check-card">
+        <article class="check-card report-check-card">
           <div class="meta-line">
             <strong>${escapeHtml(check.name)}</strong>
             <span class="pill ${check.status}">${check.status}</span>
@@ -770,13 +770,14 @@ function renderReport(report) {
 
   document.getElementById("remediation-list").innerHTML = report.remediation_plan
     .map(
-      (item) => `
-        <article class="check-card">
+      (item, index) => `
+        <article class="check-card remediation-card">
           <div class="meta-line">
-            <strong>${escapeHtml(item.title)}</strong>
+            <strong><span class="priority-index">${index + 1}</span>${escapeHtml(item.title)}</strong>
             <span class="pill ${item.priority.toLowerCase()}">${escapeHtml(item.priority)}</span>
           </div>
           <p>${escapeHtml(item.action)}</p>
+          <small>Owner: ${escapeHtml(item.owner || "Security team")}</small>
         </article>
       `
     )
@@ -792,21 +793,74 @@ function renderReport(report) {
               <div class="meta-line">
                 <span>${escapeHtml(finding.category)}</span>
                 <span>${escapeHtml(finding.host)}</span>
-                <span>${escapeHtml(finding.port || "n/a")}</span>
+                <span>${escapeHtml(finding.service || "service n/a")}</span>
+                <span>${escapeHtml(finding.port || "port n/a")}</span>
               </div>
             </div>
             <span class="pill ${finding.severity}">${escapeHtml(finding.severity)}</span>
           </header>
-          <div class="meta-line">
-            <span>CVSS ${finding.cvss}</span>
+          <div class="finding-meter" aria-label="Finding severity score">
+            <span style="width: ${Math.min(100, Math.max(0, Number(finding.cvss || 0) * 10))}%;"></span>
+          </div>
+          <div class="meta-line finding-meta">
+            <span>CVSS ${Number(finding.cvss || 0).toFixed(1)}</span>
             <span>${escapeHtml(finding.cve || "No CVE supplied")}</span>
           </div>
           <p>${escapeHtml(finding.description)}</p>
-          <p><strong>Remediation:</strong> ${escapeHtml(finding.remediation)}</p>
+          <div class="remediation-note"><strong>Action:</strong> ${escapeHtml(finding.remediation)}</div>
+          ${finding.evidence ? `<details><summary>Evidence</summary><pre>${escapeHtml(finding.evidence)}</pre></details>` : ""}
         </article>
       `
     )
     .join("");
+}
+
+function renderReportCockpit(report, activeScan) {
+  const counts = report.severity_counts || {};
+  const totalFindings = ["critical", "high", "medium", "low", "info"].reduce(
+    (sum, key) => sum + Number(counts[key] || 0),
+    0
+  );
+  const riskScore = Number(report.risk_score || 0);
+  const criticalHigh = Number(counts.critical || 0) + Number(counts.high || 0);
+  const riskAngle = Math.max(0, Math.min(100, riskScore)) * 3.6;
+  const targetLabel = activeScan?.target || report.findings?.[0]?.host || "Completed assessment";
+
+  document.getElementById("report-target-title").textContent = targetLabel;
+  document.getElementById("executive-summary").textContent = report.executive_summary;
+  document.getElementById("report-risk-score").textContent = riskScore;
+  document.querySelector(".risk-orbit").style.setProperty("--risk-angle", `${riskAngle}deg`);
+  document.getElementById("report-scope").textContent =
+    report.scope_summary || "Scope details were not supplied for this report.";
+
+  const kpis = [
+    ["Risk Score", `${riskScore}/100`, report.risk_band || "N/A"],
+    ["Findings", totalFindings, "Total observations"],
+    ["Critical + High", criticalHigh, "Immediate focus"],
+    ["Report Type", activeScan ? formatMode(activeScan.assessment_mode) : "Assessment", activeScan ? formatTier(activeScan.scan_tier) : "Completed"],
+  ];
+  document.getElementById("report-kpi-grid").innerHTML = kpis
+    .map(
+      ([label, value, helper]) => `
+        <article class="report-kpi">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+          <small>${escapeHtml(helper)}</small>
+        </article>
+      `
+    )
+    .join("");
+
+  renderCompactList("report-methodology", report.methodology || report.scan_protocols || []);
+  renderCompactList("report-limitations", report.limitations || []);
+}
+
+function renderCompactList(elementId, items) {
+  const element = document.getElementById(elementId);
+  const normalized = (items || []).filter(Boolean).slice(0, 5);
+  element.innerHTML = normalized.length
+    ? normalized.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
+    : "<li>No additional detail supplied.</li>";
 }
 
 function renderBars(elementId, items) {

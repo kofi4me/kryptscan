@@ -415,7 +415,7 @@
                 <div>
                   <h3>Assessment Report</h3>
                   <p class="inline-copy">
-                    Executive summary, severity checks, remediation priorities, and technical findings.
+                    Executive risk view, validated tool evidence, remediation priorities, and technical findings.
                   </p>
                 </div>
                 <div class="report-actions">
@@ -425,9 +425,41 @@
                 </div>
               </div>
 
-              <p id="executive-summary" class="summary-copy">
-                Launch an assessment to populate the executive summary and technical findings.
-              </p>
+              <section id="report-cockpit" class="report-cockpit">
+                <div class="report-hero">
+                  <div>
+                    <div class="eyebrow">Executive Risk View</div>
+                    <h3 id="report-target-title">No report selected</h3>
+                    <p id="executive-summary" class="summary-copy">
+                      Launch an assessment to populate the executive summary and technical findings.
+                    </p>
+                  </div>
+                  <div class="risk-orbit" aria-label="Overall risk score">
+                    <div id="risk-orbit-fill" class="risk-orbit-fill" style="--risk-angle: 0deg"></div>
+                    <div class="risk-orbit-core">
+                      <strong id="report-risk-score">--</strong>
+                      <span>/100</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="report-kpi-grid" class="report-kpi-grid" aria-label="Report metrics"></div>
+
+                <div class="report-context-grid">
+                  <article>
+                    <span>Scope</span>
+                    <p id="report-scope">Report scope appears after a completed assessment.</p>
+                  </article>
+                  <article>
+                    <span>Methodology</span>
+                    <ul id="report-methodology"></ul>
+                  </article>
+                  <article>
+                    <span>Limitations</span>
+                    <ul id="report-limitations"></ul>
+                  </article>
+                </div>
+              </section>
 
               <form id="manual-finding-form" class="manual-form hidden">
                 <h4>Manual Tester Workspace</h4>
