@@ -18,6 +18,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("registration-form").addEventListener("submit", handleRegister);
   document.getElementById("register-show-password-input").addEventListener("change", toggleRegistrationPasswordVisibility);
   document.getElementById("login-form").addEventListener("submit", handleLogin);
+  document.getElementById("login-show-password-input").addEventListener("change", toggleLoginPasswordVisibility);
   document.getElementById("forgot-password-button").addEventListener("click", showPasswordResetPage);
   document.getElementById("back-to-login-button").addEventListener("click", () => showOnly("landing-page"));
   document.getElementById("password-reset-request-form").addEventListener("submit", handlePasswordResetRequest);
@@ -132,6 +133,25 @@ function toggleRegistrationPasswordVisibility() {
     const input = document.getElementById(id);
     if (input) input.type = visible ? "text" : "password";
   });
+}
+
+function toggleLoginPasswordVisibility() {
+  const input = document.getElementById("login-password-input");
+  const visible = document.getElementById("login-show-password-input").checked;
+  if (input) input.type = visible ? "text" : "password";
+}
+
+function setButtonBusy(buttonId, busy, busyText) {
+  const button = document.getElementById(buttonId);
+  if (!button) return;
+  if (busy) {
+    button.dataset.originalText = button.textContent;
+    button.textContent = busyText;
+    button.disabled = true;
+    return;
+  }
+  button.textContent = button.dataset.originalText || button.textContent;
+  button.disabled = false;
 }
 
 function selectAssessmentMode(mode) {
@@ -323,68 +343,84 @@ async function handleResendVerificationCode() {
 
 async function handleRegister(event) {
   event.preventDefault();
+  setButtonBusy("registration-submit-button", true, "Submitting...");
   const password = document.getElementById("register-password-input").value;
   const confirmPassword = document.getElementById("register-password-confirm-input").value;
   const email = document.getElementById("register-email-input").value.trim();
   state.email = email;
   if (password !== confirmPassword) {
     setStatus("auth-status", "Passwords do not match.", "error");
+    setButtonBusy("registration-submit-button", false);
     return;
   }
 
-  const { response, payload } = await fetchJson("/api/auth/register", {
-    method: "POST",
-    body: JSON.stringify({
-      email,
-      password,
-      full_name: document.getElementById("register-name-input").value.trim(),
-      job_title: document.getElementById("register-title-input").value.trim(),
-      professional_role: document.getElementById("register-role-input").value.trim(),
-      company_name: document.getElementById("register-company-input").value.trim(),
-      company_address: document.getElementById("register-address-input").value.trim(),
-      phone_number: document.getElementById("register-phone-input").value.trim(),
-      date_of_birth: document.getElementById("register-dob-input").value || null,
-      testing_reason: document.getElementById("register-reason-input").value.trim(),
-      data_protection_accepted: document.getElementById("register-data-protection-input").checked,
-      safe_use_accepted: document.getElementById("register-safe-use-input").checked,
-    }),
-  });
-  if (!response.ok) {
-    setStatus("auth-status", payload.detail || "Unable to complete registration.", "error");
-    return;
+  try {
+    const { response, payload } = await fetchJson("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        email,
+        password,
+        full_name: document.getElementById("register-name-input").value.trim(),
+        job_title: document.getElementById("register-title-input").value.trim(),
+        professional_role: document.getElementById("register-role-input").value.trim(),
+        company_name: document.getElementById("register-company-input").value.trim(),
+        company_address: document.getElementById("register-address-input").value.trim(),
+        phone_number: document.getElementById("register-phone-input").value.trim(),
+        date_of_birth: document.getElementById("register-dob-input").value || null,
+        testing_reason: document.getElementById("register-reason-input").value.trim(),
+        data_protection_accepted: document.getElementById("register-data-protection-input").checked,
+        safe_use_accepted: document.getElementById("register-safe-use-input").checked,
+      }),
+    });
+    if (!response.ok) {
+      setStatus("auth-status", payload.detail || "Unable to complete registration.", "error");
+      return;
+    }
+    setStatus(
+      "verify-status",
+      `Registration received. Verification code sent to ${payload.email}. It expires in 10 minutes.`,
+      "success"
+    );
+    startVerificationTimer(payload.expires_in_seconds || 600);
+    showVerificationPage();
+  } finally {
+    setButtonBusy("registration-submit-button", false);
   }
-  setStatus(
-    "verify-status",
-    `Registration received. Verification code sent to ${payload.email}. It expires in 10 minutes.`,
-    "success"
-  );
-  startVerificationTimer(payload.expires_in_seconds || 600);
-  showVerificationPage();
 }
 
 async function handleLogin(event) {
   event.preventDefault();
+  setButtonBusy("login-submit-button", true, "Logging in...");
   const email = document.getElementById("login-email-input").value.trim();
   state.email = email;
-  const { response, payload } = await fetchJson("/api/auth/login", {
-    method: "POST",
-    body: JSON.stringify({
-      email,
-      password: document.getElementById("login-password-input").value,
-    }),
-  });
-  if (!response.ok) {
-    if (response.status === 403 && String(payload.detail || "").includes("verification")) {
-      setStatus("verify-status", payload.detail, "neutral");
-      startVerificationTimer(600);
-      showVerificationPage();
+  try {
+    const { response, payload } = await fetchJson("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        email,
+        password: document.getElementById("login-password-input").value,
+      }),
+    });
+    if (!response.ok) {
+      const detail = String(payload.detail || "");
+      if (response.status === 403 && detail.toLowerCase().includes("verification")) {
+        setStatus("verify-status", detail, "neutral");
+        startVerificationTimer(payload.expires_in_seconds || 600);
+        showVerificationPage();
+        return;
+      }
+      if (detail.toLowerCase().includes("locked")) {
+        setStatus("auth-status", `${detail} Use Reset Password to unlock the account immediately.`, "error");
+        return;
+      }
+      setStatus("auth-status", detail || "Unable to log in.", "error");
       return;
     }
-    setStatus("auth-status", payload.detail || "Unable to log in.", "error");
-    return;
+    setStatus("auth-status", "Login successful.", "success");
+    await loadDashboard(false, { showChoiceWhenAuthenticated: true });
+  } finally {
+    setButtonBusy("login-submit-button", false);
   }
-  setStatus("auth-status", "Login successful.", "success");
-  await loadDashboard(false, { showChoiceWhenAuthenticated: true });
 }
 
 async function handleVerifyCode(event) {

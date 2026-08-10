@@ -158,7 +158,7 @@
                   <input id="register-safe-use-input" type="checkbox" required />
                   <span>I confirm I will only test systems I own or am authorized to test.</span>
                 </label>
-                <button type="submit">Submit</button>
+                <button id="registration-submit-button" type="submit">Submit</button>
               </form>
               <div id="auth-status" class="status-card neutral">
                 Register with your real details. A verification code will be sent to the email used here.
@@ -174,8 +174,12 @@
                   <span>Password</span>
                   <input id="login-password-input" type="password" placeholder="Your password" required />
                 </label>
+                <label class="check-option compact-check">
+                  <input id="login-show-password-input" type="checkbox" />
+                  <span>Show password</span>
+                </label>
                 <div class="auth-actions">
-                  <button type="submit">Log In</button>
+                  <button id="login-submit-button" type="submit">Log In</button>
                   <button id="forgot-password-button" type="button" class="ghost">Reset Password</button>
                 </div>
               </form>
