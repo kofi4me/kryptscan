@@ -64,6 +64,47 @@ function jsonHeaders() {
   return { "Content-Type": "application/json", ...csrfHeaders() };
 }
 
+function fieldLabel(path) {
+  const field = String(path || "").split(".").pop();
+  const labels = {
+    company_address: "Company address",
+    company_name: "Company",
+    confirm_password: "Confirm password",
+    data_protection_accepted: "Data protection agreement",
+    date_of_birth: "Date of birth",
+    email: "Email",
+    full_name: "Full name",
+    job_title: "Title",
+    password: "Password",
+    phone_number: "Phone number",
+    professional_role: "Role",
+    safe_use_accepted: "Authorized testing confirmation",
+    testing_reason: "Reason for testing",
+  };
+  return labels[field] || field.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatApiError(payload, fallback) {
+  const detail = payload?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        const location = Array.isArray(item.loc) ? item.loc.filter((part) => part !== "body").join(".") : "";
+        const label = fieldLabel(location);
+        const message = item.msg || "is invalid";
+        return label ? `${label}: ${message}.` : `${message}.`;
+      })
+      .join(" ");
+  }
+  if (typeof detail === "object") {
+    return detail.message || detail.error || fallback;
+  }
+  return String(detail);
+}
+
 async function ensureCsrfCookie() {
   if (getCookie("kryptnet_csrf")) return;
   await fetch("/", { method: "GET", cache: "no-store" });
@@ -268,7 +309,7 @@ async function handleCheckoutPlan(plan) {
   });
   const payload = await response.json();
   if (!response.ok) {
-    setStatus("dashboard-status", payload.detail || "Unable to prepare checkout.", "error");
+    setStatus("dashboard-status", formatApiError(payload, "Unable to prepare checkout."), "error");
     return;
   }
   const planName = payload.plan?.name || plan;
@@ -297,7 +338,7 @@ async function handleRequestCode(event) {
   });
 
   if (!response.ok) {
-    setStatus("auth-status", payload.detail || "Unable to send verification code.", "error");
+    setStatus("auth-status", formatApiError(payload, "Unable to send verification code."), "error");
     return;
   }
 
@@ -326,7 +367,7 @@ async function handleResendVerificationCode() {
     body: JSON.stringify({ email }),
   });
   if (!response.ok) {
-    setStatus("verify-status", payload.detail || "Unable to resend verification code.", "error");
+    setStatus("verify-status", formatApiError(payload, "Unable to resend verification code."), "error");
     return;
   }
   const isConsoleDelivery = payload.delivery === "console";
@@ -347,9 +388,15 @@ async function handleRegister(event) {
   const password = document.getElementById("register-password-input").value;
   const confirmPassword = document.getElementById("register-password-confirm-input").value;
   const email = document.getElementById("register-email-input").value.trim();
+  const testingReason = document.getElementById("register-reason-input").value.trim();
   state.email = email;
   if (password !== confirmPassword) {
     setStatus("auth-status", "Passwords do not match.", "error");
+    setButtonBusy("registration-submit-button", false);
+    return;
+  }
+  if (testingReason.length < 10) {
+    setStatus("auth-status", "Reason for testing must be at least 10 characters. Example: Company routine security testing.", "error");
     setButtonBusy("registration-submit-button", false);
     return;
   }
@@ -367,13 +414,13 @@ async function handleRegister(event) {
         company_address: document.getElementById("register-address-input").value.trim(),
         phone_number: document.getElementById("register-phone-input").value.trim(),
         date_of_birth: document.getElementById("register-dob-input").value || null,
-        testing_reason: document.getElementById("register-reason-input").value.trim(),
+        testing_reason: testingReason,
         data_protection_accepted: document.getElementById("register-data-protection-input").checked,
         safe_use_accepted: document.getElementById("register-safe-use-input").checked,
       }),
     });
     if (!response.ok) {
-      setStatus("auth-status", payload.detail || "Unable to complete registration.", "error");
+      setStatus("auth-status", formatApiError(payload, "Unable to complete registration."), "error");
       return;
     }
     setStatus(
@@ -402,7 +449,7 @@ async function handleLogin(event) {
       }),
     });
     if (!response.ok) {
-      const detail = String(payload.detail || "");
+      const detail = formatApiError(payload, "Unable to log in.");
       if (response.status === 403 && detail.toLowerCase().includes("verification")) {
         setStatus("verify-status", detail, "neutral");
         startVerificationTimer(payload.expires_in_seconds || 600);
@@ -434,7 +481,7 @@ async function handleVerifyCode(event) {
   });
 
   if (!response.ok) {
-    setStatus("verify-status", payload.detail || "Verification failed.", "error");
+    setStatus("verify-status", formatApiError(payload, "Verification failed."), "error");
     return;
   }
 
@@ -465,7 +512,7 @@ async function handleCompleteRegistration(event) {
     }),
   });
   if (!response.ok) {
-    setStatus("registration-status", payload.detail || "Unable to complete registration.", "error");
+    setStatus("registration-status", formatApiError(payload, "Unable to complete registration."), "error");
     return;
   }
   setStatus("registration-status", "Registration completed. Choose a service to continue.", "success");
@@ -481,7 +528,7 @@ async function handlePasswordResetRequest(event) {
     body: JSON.stringify({ email }),
   });
   if (!response.ok) {
-    setStatus("password-reset-status", payload.detail || "Unable to send reset code.", "error");
+    setStatus("password-reset-status", formatApiError(payload, "Unable to send reset code."), "error");
     return;
   }
   setStatus("password-reset-status", "If the account exists, a reset code has been sent. The code expires in 10 minutes.", "success");
@@ -498,7 +545,7 @@ async function handlePasswordResetConfirm(event) {
     }),
   });
   if (!response.ok) {
-    setStatus("password-reset-status", payload.detail || "Unable to reset password.", "error");
+    setStatus("password-reset-status", formatApiError(payload, "Unable to reset password."), "error");
     return;
   }
   setStatus("password-reset-status", "Password reset successful. Choose a testing option to continue.", "success");
@@ -540,7 +587,7 @@ async function handleCreateScan(event) {
   });
 
   if (!response.ok) {
-    setStatus("dashboard-status", payload.detail || "Unable to launch assessment.", "error");
+    setStatus("dashboard-status", formatApiError(payload, "Unable to launch assessment."), "error");
     return;
   }
 
@@ -652,7 +699,7 @@ async function loadReport(scanId) {
   const response = await fetch(`/api/reports/${scanId}`);
   const payload = await response.json();
   if (!response.ok) {
-    setStatus("dashboard-status", payload.detail || "Report not ready yet.", "neutral");
+    setStatus("dashboard-status", formatApiError(payload, "Report not ready yet."), "neutral");
     return;
   }
 
@@ -681,7 +728,7 @@ async function handleAddManualFinding(event) {
   });
   const payload = await response.json();
   if (!response.ok) {
-    setStatus("dashboard-status", payload.detail || "Unable to add manual finding.", "error");
+    setStatus("dashboard-status", formatApiError(payload, "Unable to add manual finding."), "error");
     return;
   }
   document.getElementById("manual-finding-form").reset();
@@ -696,7 +743,7 @@ async function refreshScan(scanId) {
   const payload = await response.json();
 
   if (!response.ok) {
-    setStatus("dashboard-status", payload.detail || "Unable to refresh scan.", "error");
+    setStatus("dashboard-status", formatApiError(payload, "Unable to refresh scan."), "error");
     return;
   }
 
@@ -1229,7 +1276,7 @@ async function emailReport(scanId) {
   });
   const payload = await response.json();
   if (!response.ok) {
-    setStatus("dashboard-status", payload.detail || "Unable to email PDF report.", "error");
+    setStatus("dashboard-status", formatApiError(payload, "Unable to email PDF report."), "error");
     return;
   }
   setStatus(
