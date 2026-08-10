@@ -152,7 +152,7 @@ def _rate_limit(request: Request, bucket: str, *, limit: int, window_seconds: in
     if not rate_limiter.allow(key, limit=limit, window_seconds=window_seconds):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many requests. Wait briefly before trying again.",
+            detail="Too many requests from this network. Wait briefly or try again after a few minutes.",
         )
 
 
@@ -965,7 +965,7 @@ def scanner_health(user: Row = Depends(get_current_user)) -> dict:
 
 @app.post("/api/auth/request-code")
 def request_code(request: Request, payload: AuthRequest) -> dict:
-    _rate_limit(request, "auth.request_code", limit=8, window_seconds=15 * 60)
+    _rate_limit(request, "auth.request_code", limit=20, window_seconds=15 * 60)
     try:
         return auth_service.request_code(payload.email)
     except ValueError as exc:
@@ -979,7 +979,7 @@ def request_code(request: Request, payload: AuthRequest) -> dict:
 
 @app.post("/api/auth/register")
 def register(request: Request, payload: RegistrationRequest) -> dict:
-    _rate_limit(request, "auth.register", limit=5, window_seconds=15 * 60)
+    _rate_limit(request, "auth.register", limit=20, window_seconds=15 * 60)
     try:
         result = auth_service.register_account(payload)
     except ValueError as exc:
@@ -994,7 +994,7 @@ def register(request: Request, payload: RegistrationRequest) -> dict:
 
 @app.post("/api/auth/login")
 def login(request: Request, payload: LoginRequest) -> Response:
-    _rate_limit(request, "auth.login", limit=8, window_seconds=15 * 60)
+    _rate_limit(request, "auth.login", limit=30, window_seconds=15 * 60)
     try:
         user = auth_service.login(payload.email, payload.password)
     except PermissionError as exc:
@@ -1017,13 +1017,13 @@ def login(request: Request, payload: LoginRequest) -> Response:
 
 @app.post("/api/auth/password-reset/request")
 def request_password_reset(request: Request, payload: PasswordResetRequest) -> dict:
-    _rate_limit(request, "auth.password_reset_request", limit=5, window_seconds=15 * 60)
+    _rate_limit(request, "auth.password_reset_request", limit=15, window_seconds=15 * 60)
     return auth_service.request_password_reset(payload.email)
 
 
 @app.post("/api/auth/password-reset/confirm")
 def confirm_password_reset(request: Request, payload: PasswordResetConfirmRequest) -> Response:
-    _rate_limit(request, "auth.password_reset_confirm", limit=8, window_seconds=15 * 60)
+    _rate_limit(request, "auth.password_reset_confirm", limit=20, window_seconds=15 * 60)
     try:
         user = auth_service.reset_password(payload.email, payload.code, payload.new_password)
     except ValueError as exc:
@@ -1044,7 +1044,7 @@ def confirm_password_reset(request: Request, payload: PasswordResetConfirmReques
 
 @app.post("/api/auth/verify")
 def verify_code(request: Request, payload: AuthVerifyRequest) -> Response:
-    _rate_limit(request, "auth.verify_code", limit=10, window_seconds=15 * 60)
+    _rate_limit(request, "auth.verify_code", limit=30, window_seconds=15 * 60)
     try:
         user = auth_service.verify_code(payload.email, payload.code)
     except ValueError as exc:
@@ -1076,7 +1076,7 @@ def complete_registration(
     payload: RegistrationProfileRequest,
     user: Row = Depends(get_current_user),
 ) -> dict:
-    _rate_limit(request, "auth.complete_registration", limit=10, window_seconds=60)
+    _rate_limit(request, "auth.complete_registration", limit=20, window_seconds=60)
     if not payload.safe_use_accepted:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
