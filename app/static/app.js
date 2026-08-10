@@ -6,6 +6,8 @@ const state = {
   assessmentMode: "vulnerability_assessment",
   scanTier: "free_preview",
   refreshTimer: null,
+  verificationTimer: null,
+  verificationExpiresAt: null,
 };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -113,6 +115,7 @@ function selectAssessmentMode(mode) {
   if (tierSelector) {
     tierSelector.classList.toggle("hidden", clientOnly || mode !== "vulnerability_assessment");
   }
+  updateReportIntakeVisibility();
   updateScanSubmitText();
   const subtitle = document.getElementById("dashboard-subtitle");
   if (subtitle && state.dashboard) {
@@ -132,10 +135,32 @@ function selectScanTier(tier, options = {}) {
   document.querySelectorAll("[data-scan-tier]").forEach((button) => {
     button.classList.toggle("active", button.dataset.scanTier === tier);
   });
+  updateReportIntakeVisibility();
   updateScanSubmitText();
   if (!options.silent && state.dashboard) {
     renderCommercialReadiness(state.dashboard);
   }
+}
+
+function updateReportIntakeVisibility() {
+  const panel = document.getElementById("report-intake-fields");
+  if (!panel) return;
+  const required = state.assessmentMode === "ethical_pentesting" || state.scanTier === "full_scan";
+  panel.classList.toggle("hidden", !required);
+  [
+    "report-company-name-input",
+    "report-company-address-input",
+    "report-contact-name-input",
+    "report-contact-email-input",
+    "report-contact-phone-input",
+    "report-authorization-reference-input",
+    "report-scope-notes-input",
+    "report-testing-window-input",
+    "report-emergency-contact-input",
+  ].forEach((id) => {
+    const field = document.getElementById(id);
+    if (field) field.required = required;
+  });
 }
 
 function updateScanSubmitText() {
@@ -147,6 +172,40 @@ function updateScanSubmitText() {
     submit.textContent = "Run Full Vulnerability Scan";
   } else {
     submit.textContent = "Run Free Vulnerability Scan";
+  }
+}
+
+function startVerificationTimer(seconds) {
+  state.verificationExpiresAt = Date.now() + Number(seconds || 600) * 1000;
+  const timer = document.getElementById("verification-timer");
+  const verifyButton = document.querySelector("#verify-code-form button[type='submit']");
+  const render = () => {
+    const remaining = Math.max(0, Math.ceil((state.verificationExpiresAt - Date.now()) / 1000));
+    const minutes = String(Math.floor(remaining / 60)).padStart(2, "0");
+    const secs = String(remaining % 60).padStart(2, "0");
+    if (timer) {
+      timer.textContent =
+        remaining > 0
+          ? `Verification code expires in ${minutes}:${secs}.`
+          : "Verification code expired. Request a new code to continue.";
+      timer.classList.toggle("expired", remaining === 0);
+    }
+    if (verifyButton) verifyButton.disabled = remaining === 0;
+    if (remaining === 0 && state.verificationTimer) {
+      window.clearInterval(state.verificationTimer);
+      state.verificationTimer = null;
+    }
+  };
+  if (state.verificationTimer) window.clearInterval(state.verificationTimer);
+  if (verifyButton) verifyButton.disabled = false;
+  render();
+  state.verificationTimer = window.setInterval(render, 1000);
+}
+
+function clearVerificationTimer() {
+  if (state.verificationTimer) {
+    window.clearInterval(state.verificationTimer);
+    state.verificationTimer = null;
   }
 }
 
@@ -196,8 +255,9 @@ async function handleRequestCode(event) {
   const isConsoleDelivery = payload.delivery === "console";
   const message = isConsoleDelivery
     ? `Verification code generated for ${payload.email}. Local testing mode is active, so read the code from the server terminal to continue.`
-    : `Verification code sent to ${payload.email}. Check your organizational inbox and spam folder.`;
+    : `Verification code sent to ${payload.email}. Check your inbox and spam folder. It expires in 10 minutes.`;
   setStatus("verify-status", message, "success");
+  startVerificationTimer(payload.expires_in_seconds || 600);
   showVerificationPage();
 }
 
@@ -218,6 +278,7 @@ async function handleVerifyCode(event) {
     return;
   }
 
+  clearVerificationTimer();
   setStatus(
     "verify-status",
     "Email verified. Choose a testing option to continue.",
@@ -257,6 +318,18 @@ async function handleCreateScan(event) {
   const assessment_mode = document.getElementById("assessment-mode-input").value;
   const scan_tier = document.getElementById("scan-tier-input").value;
   const body = { target, assessment_mode, scan_tier };
+  const needsReportIntake = assessment_mode === "ethical_pentesting" || scan_tier === "full_scan";
+  if (needsReportIntake) {
+    body.report_company_name = document.getElementById("report-company-name-input").value.trim();
+    body.report_company_address = document.getElementById("report-company-address-input").value.trim();
+    body.report_contact_name = document.getElementById("report-contact-name-input").value.trim();
+    body.report_contact_email = document.getElementById("report-contact-email-input").value.trim();
+    body.report_contact_phone = document.getElementById("report-contact-phone-input").value.trim();
+    body.report_authorization_reference = document.getElementById("report-authorization-reference-input").value.trim();
+    body.report_scope_notes = document.getElementById("report-scope-notes-input").value.trim();
+    body.report_testing_window = document.getElementById("report-testing-window-input").value.trim();
+    body.report_emergency_contact = document.getElementById("report-emergency-contact-input").value.trim();
+  }
   if (assessment_mode === "ethical_pentesting") {
     body.pentest_depth = document.getElementById("pentest-depth-input").value;
     body.validation_mode = document.getElementById("validation-mode-input").value;

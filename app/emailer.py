@@ -59,6 +59,7 @@ class SmtpEmailSender(BaseEmailSender):
             "Use this code to authorize your vulnerability assessment account.\n\n"
             f"Verification code: {code}\n"
             f"Authorized domain: {domain}\n\n"
+            "This code expires in 10 minutes.\n\n"
             "If you did not request this code, ignore this message."
         )
 

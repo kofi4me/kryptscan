@@ -28,7 +28,7 @@ class AuthService:
         code_hash = hash_verification_code(self.settings.app_secret, normalized, code)
         created_at = utcnow()
         expires_at = created_at.replace(microsecond=0)
-        expires_at = expires_at.timestamp() + 15 * 60
+        expires_at = expires_at.timestamp() + 10 * 60
 
         with get_connection() as connection:
             organization = connection.execute(
@@ -77,6 +77,7 @@ class AuthService:
             "email": mask_email(normalized),
             "domain": domain,
             "delivery": self.settings.email_delivery,
+            "expires_in_seconds": 10 * 60,
         }
 
     def verify_code(self, email: str, code: str) -> Row:

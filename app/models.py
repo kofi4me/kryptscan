@@ -31,6 +31,15 @@ class ScanCreateRequest(BaseModel):
     assessment_mode: str = "vulnerability_assessment"
     scan_tier: str = "full_scan"
     engagement_id: int | None = None
+    report_company_name: str | None = Field(default=None, max_length=180)
+    report_company_address: str | None = Field(default=None, max_length=300)
+    report_contact_name: str | None = Field(default=None, max_length=160)
+    report_contact_email: str | None = Field(default=None, max_length=180)
+    report_contact_phone: str | None = Field(default=None, max_length=60)
+    report_authorization_reference: str | None = Field(default=None, max_length=200)
+    report_scope_notes: str | None = Field(default=None, max_length=1200)
+    report_testing_window: str | None = Field(default=None, max_length=160)
+    report_emergency_contact: str | None = Field(default=None, max_length=160)
     pentest_depth: str = Field(default="standard")
     vulnerability_focus: list[str] = Field(default_factory=list)
     known_vulnerabilities: str | None = Field(default=None, max_length=1000)
@@ -39,6 +48,10 @@ class ScanCreateRequest(BaseModel):
 
 class EngagementCreateRequest(BaseModel):
     client_name: str = Field(min_length=2, max_length=160)
+    company_address: str | None = Field(default=None, max_length=300)
+    contact_name: str | None = Field(default=None, max_length=160)
+    contact_email: str | None = Field(default=None, max_length=180)
+    contact_phone: str | None = Field(default=None, max_length=60)
     authorization_reference: str = Field(min_length=3, max_length=200)
     scope_notes: str = Field(min_length=5, max_length=1200)
     testing_window: str = Field(min_length=3, max_length=160)
@@ -49,6 +62,10 @@ class EngagementCreateRequest(BaseModel):
 class EngagementSummary(BaseModel):
     id: int
     client_name: str
+    company_address: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    contact_phone: str | None = None
     authorization_reference: str
     scope_notes: str
     testing_window: str

@@ -239,6 +239,10 @@ def _serialize_engagement(engagement: Row) -> EngagementSummary:
     return EngagementSummary(
         id=engagement["id"],
         client_name=engagement["client_name"],
+        company_address=engagement["company_address"],
+        contact_name=engagement["contact_name"],
+        contact_email=engagement["contact_email"],
+        contact_phone=engagement["contact_phone"],
         authorization_reference=engagement["authorization_reference"],
         scope_notes=engagement["scope_notes"],
         testing_window=engagement["testing_window"],
@@ -314,6 +318,10 @@ def _audit(connection, user: Row, action: str, details: dict | None = None) -> N
             utcnow().isoformat(),
         ),
     )
+
+
+def _clean_optional(value: str | None) -> str:
+    return value.strip() if value else ""
 
 
 def _active_entitlement(connection, organization_id: int) -> Row | None:
@@ -506,6 +514,10 @@ def _report_owner_details(scan: Row, engagement: Row | None) -> dict[str, str]:
     if engagement:
         return {
             "Owner / client name": engagement["client_name"],
+            "Owner / client address": engagement["company_address"] or "",
+            "Primary contact": engagement["contact_name"] or "",
+            "Contact email": engagement["contact_email"] or "",
+            "Contact phone": engagement["contact_phone"] or "",
             "Authorized target": scan["normalized_target"],
             "Asset type": scan["asset_type"],
             "Authorization reference": engagement["authorization_reference"],
@@ -1535,6 +1547,10 @@ def create_engagement(
             INSERT INTO engagements (
                 organization_id,
                 client_name,
+                company_address,
+                contact_name,
+                contact_email,
+                contact_phone,
                 authorization_reference,
                 scope_notes,
                 testing_window,
@@ -1544,11 +1560,15 @@ def create_engagement(
                 created_by,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_approval', ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', ?, ?)
             """,
             (
                 user["organization_id"],
                 payload.client_name.strip(),
+                _clean_optional(payload.company_address),
+                _clean_optional(payload.contact_name),
+                _clean_optional(payload.contact_email),
+                _clean_optional(payload.contact_phone),
                 payload.authorization_reference.strip(),
                 payload.scope_notes.strip(),
                 payload.testing_window.strip(),
@@ -1675,6 +1695,38 @@ def create_scan(
         if payload.known_vulnerabilities:
             scan_protocols.append(f"Known vulnerabilities to validate: {payload.known_vulnerabilities.strip()}")
 
+    needs_report_intake = scan_tier == "full_scan" or assessment_mode == "ethical_pentesting"
+    report_company_name = _clean_optional(payload.report_company_name)
+    report_company_address = _clean_optional(payload.report_company_address)
+    report_contact_name = _clean_optional(payload.report_contact_name)
+    report_contact_email = _clean_optional(payload.report_contact_email)
+    report_contact_phone = _clean_optional(payload.report_contact_phone)
+    report_authorization_reference = _clean_optional(payload.report_authorization_reference)
+    report_scope_notes = _clean_optional(payload.report_scope_notes)
+    report_testing_window = _clean_optional(payload.report_testing_window)
+    report_emergency_contact = _clean_optional(payload.report_emergency_contact)
+    if needs_report_intake and not payload.engagement_id:
+        missing_report_fields = [
+            label
+            for label, value in [
+                ("company name", report_company_name),
+                ("company address", report_company_address),
+                ("contact name", report_contact_name),
+                ("contact email", report_contact_email),
+                ("contact phone", report_contact_phone),
+                ("authorization reference", report_authorization_reference),
+                ("scope notes", report_scope_notes),
+                ("testing window", report_testing_window),
+                ("emergency contact", report_emergency_contact),
+            ]
+            if not value
+        ]
+        if missing_report_fields:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Complete report details before launching this service: {', '.join(missing_report_fields)}.",
+            )
+
     with get_connection() as connection:
         if scan_tier == "full_scan":
             _require_entitlement(connection, user)
@@ -1722,6 +1774,57 @@ def create_scan(
             ),
         ).fetchone()
 
+        engagement_id = payload.engagement_id
+        if engagement_id is not None:
+            engagement = connection.execute(
+                "SELECT * FROM engagements WHERE id = ? AND organization_id = ?",
+                (engagement_id, user["organization_id"]),
+            ).fetchone()
+            if engagement is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found.")
+        elif needs_report_intake:
+            cursor = connection.execute(
+                """
+                INSERT INTO engagements (
+                    organization_id,
+                    client_name,
+                    company_address,
+                    contact_name,
+                    contact_email,
+                    contact_phone,
+                    authorization_reference,
+                    scope_notes,
+                    testing_window,
+                    allowed_categories_json,
+                    emergency_contact,
+                    status,
+                    approved_by,
+                    approved_at,
+                    created_by,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?, ?)
+                """,
+                (
+                    user["organization_id"],
+                    report_company_name,
+                    report_company_address,
+                    report_contact_name,
+                    report_contact_email,
+                    report_contact_phone,
+                    report_authorization_reference,
+                    report_scope_notes,
+                    report_testing_window,
+                    json.dumps(["web", "api", "network", "identity", "cloud", "reporting"]),
+                    report_emergency_contact,
+                    user["id"],
+                    now,
+                    user["id"],
+                    now,
+                ),
+            )
+            engagement_id = cursor.lastrowid
+
         cursor = connection.execute(
             """
             INSERT INTO scans (
@@ -1745,7 +1848,7 @@ def create_scan(
                 user["organization_id"],
                 target_row["id"],
                 user["id"],
-                None,
+                engagement_id,
                 selected_backend,
                 assessment_mode,
                 scan_tier,
@@ -1759,7 +1862,18 @@ def create_scan(
         scan_id = cursor.lastrowid
 
         scan = _load_scan(connection, scan_id, user["organization_id"])
-        _audit(connection, user, "scan.created", {"scan_id": scan_id, "target": authorization["normalized_target"], "mode": assessment_mode, "tier": scan_tier})
+        _audit(
+            connection,
+            user,
+            "scan.created",
+            {
+                "scan_id": scan_id,
+                "target": authorization["normalized_target"],
+                "mode": assessment_mode,
+                "tier": scan_tier,
+                "engagement_id": engagement_id,
+            },
+        )
 
     background_tasks.add_task(_run_scan_job, scan_id, int(user["id"]))
     return _summary_from_row(scan)

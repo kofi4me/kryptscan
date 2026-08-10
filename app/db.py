@@ -96,6 +96,10 @@ CREATE TABLE IF NOT EXISTS engagements (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     organization_id INTEGER NOT NULL,
     client_name TEXT NOT NULL,
+    company_address TEXT,
+    contact_name TEXT,
+    contact_email TEXT,
+    contact_phone TEXT,
     authorization_reference TEXT NOT NULL,
     scope_notes TEXT NOT NULL,
     testing_window TEXT NOT NULL,
@@ -212,6 +216,10 @@ def _ensure_engagement_columns(connection: sqlite3.Connection) -> None:
         for row in connection.execute("PRAGMA table_info(engagements)").fetchall()
     }
     required_columns = {
+        "company_address": "TEXT",
+        "contact_name": "TEXT",
+        "contact_email": "TEXT",
+        "contact_phone": "TEXT",
         "approved_by": "INTEGER",
         "approved_at": "TEXT",
     }

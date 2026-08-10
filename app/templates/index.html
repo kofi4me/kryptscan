@@ -139,7 +139,12 @@
             <div>
               <div class="eyebrow">Code Verification</div>
               <h2>Enter your verification code.</h2>
-              <p class="inline-copy">Use the six-digit code sent to your organizational email.</p>
+              <p class="inline-copy">
+                Use the six-digit code sent to your email. The code is valid for 10 minutes.
+              </p>
+              <div id="verification-timer" class="verification-timer">
+                Waiting for a new verification code.
+              </div>
             </div>
           </div>
           <form id="verify-code-form" class="stack">
@@ -297,6 +302,61 @@
               <span>Domain name or IP address</span>
               <input id="target-input" type="text" placeholder="example.com or 203.0.113.10" required />
             </label>
+            <section id="report-intake-fields" class="report-intake hidden">
+              <div class="section-head">
+                <div>
+                  <div class="eyebrow">Report Template Details</div>
+                  <h3>Client and target owner information.</h3>
+                  <p class="inline-copy">
+                    These details appear in the paid PDF report so the assessment is tied to the
+                    correct company, contact, authorization, and testing scope.
+                  </p>
+                </div>
+              </div>
+              <div class="form-grid">
+                <label>
+                  <span>Company name</span>
+                  <input id="report-company-name-input" type="text" placeholder="Client or asset owner company" />
+                </label>
+                <label>
+                  <span>Contact name</span>
+                  <input id="report-contact-name-input" type="text" placeholder="Primary report contact" />
+                </label>
+                <label>
+                  <span>Contact email</span>
+                  <input id="report-contact-email-input" type="email" placeholder="client@example.com" />
+                </label>
+                <label>
+                  <span>Contact phone</span>
+                  <input id="report-contact-phone-input" type="tel" placeholder="+1 555 010 1234" />
+                </label>
+              </div>
+              <label>
+                <span>Company address</span>
+                <input id="report-company-address-input" type="text" placeholder="Street, city, state, country" />
+              </label>
+              <div class="form-grid">
+                <label>
+                  <span>Authorization reference</span>
+                  <input id="report-authorization-reference-input" type="text" placeholder="SOW, ticket, approval email, or letter reference" />
+                </label>
+                <label>
+                  <span>Testing window</span>
+                  <input id="report-testing-window-input" type="text" placeholder="Aug 20, 2026 09:00-17:00 UTC" />
+                </label>
+              </div>
+              <label>
+                <span>Emergency contact</span>
+                <input id="report-emergency-contact-input" type="text" placeholder="Name, phone, and email for urgent stop/rollback contact" />
+              </label>
+              <label>
+                <span>Scope notes</span>
+                <textarea
+                  id="report-scope-notes-input"
+                  placeholder="Describe systems, exclusions, business constraints, and approved testing boundaries"
+                ></textarea>
+              </label>
+            </section>
             <div id="ethical-pentest-fields" class="ethical-fields hidden">
               <div class="form-grid">
                 <label>

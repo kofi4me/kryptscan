@@ -930,6 +930,42 @@ button.ghost {
   border: 1px solid rgba(20, 32, 51, 0.08);
 }
 
+.verification-timer {
+  margin-top: 0.85rem;
+  display: inline-flex;
+  width: fit-content;
+  padding: 0.55rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(47, 99, 255, 0.1);
+  border: 1px solid rgba(47, 99, 255, 0.14);
+  color: var(--cobalt);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.verification-timer.expired {
+  background: rgba(217, 75, 55, 0.1);
+  border-color: rgba(217, 75, 55, 0.18);
+  color: #b33425;
+}
+
+.report-intake {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.15rem;
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(135deg, rgba(47, 99, 255, 0.08), rgba(255, 122, 69, 0.07)),
+    rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(47, 99, 255, 0.16);
+  box-shadow: 0 16px 34px rgba(20, 32, 51, 0.07);
+}
+
+.report-intake h3 {
+  margin: 0.2rem 0 0;
+}
+
 .ethical-fields {
   grid-column: 1 / -1;
   display: grid;
