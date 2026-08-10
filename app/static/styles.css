@@ -116,13 +116,6 @@ h4 {
   font-weight: 600;
 }
 
-.masthead-pills {
-  display: flex;
-  gap: 0.7rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
 .signal-pill,
 .badge,
 .risk-band {
@@ -168,7 +161,6 @@ h4 {
 
 .hero-grid,
 .customer-gate,
-.onboarding-grid,
 .command-layout,
 .analytics-grid,
 .report-layout,
@@ -870,10 +862,6 @@ button.ghost {
   color: var(--ink);
 }
 
-.onboarding-grid {
-  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
-}
-
 .auth-panel,
 .trust-panel,
 .command-panel,
@@ -915,8 +903,7 @@ button.ghost {
 .scan-form,
 .engagement-form,
 .manual-form,
-.mode-selector,
-.scan-tier-selector {
+.mode-selector {
   display: grid;
   gap: 0.95rem;
 }
@@ -999,11 +986,6 @@ button.ghost {
 .mode-selector {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 1.1rem;
-}
-
-.scan-tier-selector {
-  grid-column: 1 / -1;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .plan-grid {
@@ -1681,10 +1663,8 @@ textarea {
   .landing-hero,
   .landing-split,
   .customer-gate,
-  .onboarding-grid,
   .command-layout,
   .mode-selector,
-  .scan-tier-selector,
   .plan-grid,
   .form-grid,
   .report-layout,
@@ -1739,10 +1719,6 @@ textarea {
     padding-top: 1rem;
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .masthead-pills {
-    justify-content: flex-start;
   }
 
   h1 {

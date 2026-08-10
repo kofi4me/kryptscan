@@ -4,7 +4,7 @@ const state = {
   activeReport: null,
   activeScanId: null,
   assessmentMode: "vulnerability_assessment",
-  scanTier: "free_preview",
+  scanTier: "full_scan",
   refreshTimer: null,
   verificationTimer: null,
   verificationExpiresAt: null,
@@ -33,9 +33,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.querySelectorAll("[data-assessment-mode]").forEach((button) => {
     button.addEventListener("click", () => selectAssessmentMode(button.dataset.assessmentMode));
-  });
-  document.querySelectorAll("[data-scan-tier]").forEach((button) => {
-    button.addEventListener("click", () => selectScanTier(button.dataset.scanTier));
   });
   document.querySelectorAll("[data-choice-mode]").forEach((button) => {
     button.addEventListener("click", () => openSelectedTool(button.dataset.choiceMode));
@@ -106,14 +103,10 @@ function selectAssessmentMode(mode) {
   if (ethicalFields) {
     ethicalFields.classList.toggle("hidden", clientOnly || mode !== "ethical_pentesting");
   }
-  const tierSelector = document.getElementById("scan-tier-selector");
   if (mode === "ethical_pentesting") {
     selectScanTier("full_scan", { silent: true });
-  } else if (!state.scanTier) {
-    selectScanTier("free_preview", { silent: true });
-  }
-  if (tierSelector) {
-    tierSelector.classList.toggle("hidden", clientOnly || mode !== "vulnerability_assessment");
+  } else {
+    selectScanTier("full_scan", { silent: true });
   }
   updateReportIntakeVisibility();
   updateScanSubmitText();
@@ -122,7 +115,7 @@ function selectAssessmentMode(mode) {
     subtitle.textContent =
       mode === "ethical_pentesting"
         ? `${state.dashboard.user.email} verified for ${state.dashboard.organization.domain}. Ethical Pen-Testing is paid-only and uses the approved target and full-stack testing tools.`
-        : `${state.dashboard.user.email} verified for ${state.dashboard.organization.domain}. Choose a free preview or paid full vulnerability scan for an authorized asset.`;
+        : `${state.dashboard.user.email} verified for ${state.dashboard.organization.domain}. Run a full vulnerability assessment for an authorized asset and receive a PDF report.`;
   }
   if (state.dashboard) {
     renderCommercialReadiness(state.dashboard);
@@ -130,11 +123,8 @@ function selectAssessmentMode(mode) {
 }
 
 function selectScanTier(tier, options = {}) {
-  state.scanTier = tier;
-  document.getElementById("scan-tier-input").value = tier;
-  document.querySelectorAll("[data-scan-tier]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.scanTier === tier);
-  });
+  state.scanTier = "full_scan";
+  document.getElementById("scan-tier-input").value = "full_scan";
   updateReportIntakeVisibility();
   updateScanSubmitText();
   if (!options.silent && state.dashboard) {
@@ -145,7 +135,7 @@ function selectScanTier(tier, options = {}) {
 function updateReportIntakeVisibility() {
   const panel = document.getElementById("report-intake-fields");
   if (!panel) return;
-  const required = state.assessmentMode === "ethical_pentesting" || state.scanTier === "full_scan";
+  const required = true;
   panel.classList.toggle("hidden", !required);
   [
     "report-company-name-input",
@@ -167,11 +157,9 @@ function updateScanSubmitText() {
   const submit = document.getElementById("scan-submit-button");
   if (!submit) return;
   if (state.assessmentMode === "ethical_pentesting") {
-    submit.textContent = "Run Paid Ethical Pen-Testing";
-  } else if (state.scanTier === "full_scan") {
-    submit.textContent = "Run Full Vulnerability Scan";
+    submit.textContent = "Run Ethical Pen-Testing";
   } else {
-    submit.textContent = "Run Free Vulnerability Scan";
+    submit.textContent = "Run Vulnerability Assessment";
   }
 }
 
@@ -316,9 +304,9 @@ async function handleCreateScan(event) {
   event.preventDefault();
   const target = document.getElementById("target-input").value.trim();
   const assessment_mode = document.getElementById("assessment-mode-input").value;
-  const scan_tier = document.getElementById("scan-tier-input").value;
+  const scan_tier = "full_scan";
   const body = { target, assessment_mode, scan_tier };
-  const needsReportIntake = assessment_mode === "ethical_pentesting" || scan_tier === "full_scan";
+  const needsReportIntake = true;
   if (needsReportIntake) {
     body.report_company_name = document.getElementById("report-company-name-input").value.trim();
     body.report_company_address = document.getElementById("report-company-address-input").value.trim();
@@ -361,8 +349,6 @@ async function handleCreateScan(event) {
       deliveryNote = ` Report created, but email delivery failed: ${payload.report_email_error}.`;
     } else if (payload.report_pdf_available) {
       deliveryNote = " PDF report is ready in the dashboard.";
-    } else if (payload.scan_tier === "free_preview") {
-      deliveryNote = " Free preview summary is available on the web interface.";
     }
   } else if (payload.status === "queued") {
     deliveryNote = " The scan is queued and will run in the background.";
@@ -377,9 +363,7 @@ async function handleCreateScan(event) {
   );
   document.getElementById("scan-form").reset();
   selectAssessmentMode(state.assessmentMode);
-  if (state.assessmentMode === "vulnerability_assessment") {
-    selectScanTier(state.scanTier, { silent: true });
-  }
+  selectScanTier("full_scan", { silent: true });
   await loadDashboard(true);
   if (payload.status === "completed") {
     await loadReport(payload.id);
@@ -725,20 +709,16 @@ function renderCommercialReadiness(payload) {
   const element = document.getElementById("commercial-readiness");
   if (!element || !payload) return;
   const paymentActive = payload.entitlement?.status === "active";
-  const paidRequired =
-    state.assessmentMode === "ethical_pentesting" || state.scanTier === "full_scan";
   element.innerHTML = `
     <article class="readiness-card">
       <strong>Payment</strong>
-      <span class="pill ${!paidRequired || paymentActive ? "completed" : "warn"}">${!paidRequired ? "free preview" : paymentActive ? "paid" : "required"}</span>
+      <span class="pill ${paymentActive ? "completed" : "warn"}">${paymentActive ? "paid" : "required"}</span>
       <p>${
-        !paidRequired
-          ? "Free vulnerability scan runs partial checks and displays a summary in the web interface. PDF delivery is available with the paid full scan."
-          : paymentActive
+        paymentActive
             ? `Paid package ${escapeHtml(payload.entitlement.plan)} access is valid until ${new Date(payload.entitlement.expires_at).toLocaleDateString()}.`
             : "Complete a one-time payment before launching full vulnerability scans or ethical pen-testing."
       }</p>
-      ${!paidRequired || paymentActive ? "" : `<p>Choose one service package. Debit and credit card details stay inside KryptNet checkout.</p>`}
+      ${paymentActive ? "" : `<p>Choose one service package. Debit and credit card details stay inside KryptNet checkout.</p>`}
     </article>
   `;
 }
@@ -807,7 +787,7 @@ function renderReport(report) {
     .classList.toggle("hidden", !activeScan?.report_pdf_available);
   document
     .getElementById("report-email-button")
-    .classList.toggle("hidden", !activeScan?.report_pdf_available || activeScan?.scan_tier === "free_preview");
+    .classList.toggle("hidden", !activeScan?.report_pdf_available);
   renderReportCockpit(report, activeScan);
 
   renderBars("severity-chart", [
@@ -1016,9 +996,6 @@ function deliveryText(scan) {
   if (scan.report_pdf_available) {
     return "PDF ready for download";
   }
-  if (scan.scan_tier === "free_preview") {
-    return "Web summary only";
-  }
   return "PDF pending";
 }
 
@@ -1035,7 +1012,7 @@ function formatMode(mode) {
 }
 
 function formatTier(tier) {
-  return tier === "free_preview" ? "Free Scan" : "Full Scan";
+  return "Full Scan";
 }
 
 function downloadReport(scanId) {

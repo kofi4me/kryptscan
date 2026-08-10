@@ -33,9 +33,6 @@
         </span>
       </a>
 
-      <div class="masthead-pills">
-        <span class="signal-pill">Business Security Portal</span>
-      </div>
     </header>
 
     <main class="shell">
@@ -287,17 +284,7 @@
 
           <form id="scan-form" class="scan-form assessment-form">
             <input id="assessment-mode-input" type="hidden" value="vulnerability_assessment" />
-            <input id="scan-tier-input" type="hidden" value="free_preview" />
-            <div id="scan-tier-selector" class="scan-tier-selector" aria-label="Vulnerability assessment scan type">
-              <button type="button" class="tier-card active" data-scan-tier="free_preview">
-                <span>Free Scan</span>
-                <small>Partial vulnerability scan with summary shown on the web interface.</small>
-              </button>
-              <button type="button" class="tier-card" data-scan-tier="full_scan">
-                <span>Full Scan</span>
-                <small>Deeper vulnerability scan with PDF report sent to the client email.</small>
-              </button>
-            </div>
+            <input id="scan-tier-input" type="hidden" value="full_scan" />
             <label>
               <span>Domain name or IP address</span>
               <input id="target-input" type="text" placeholder="example.com or 203.0.113.10" required />
@@ -390,14 +377,14 @@
                 ></textarea>
               </label>
             </div>
-            <button id="scan-submit-button" type="submit">Run Free Vulnerability Scan</button>
+            <button id="scan-submit-button" type="submit">Run Vulnerability Assessment</button>
           </form>
 
           <section id="payment-panel" class="engagement-form">
             <div class="section-head">
               <div>
                 <h3>One-Time Payment</h3>
-                <p class="inline-copy">Required for Full Vulnerability Scan and Ethical Pen-Testing. Free vulnerability scans display a partial web summary only.</p>
+                <p class="inline-copy">Required before launching Vulnerability Assessment or Ethical Pen-Testing. Debit and credit card payment links will connect here.</p>
               </div>
             </div>
             <div class="plan-grid">

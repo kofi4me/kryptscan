@@ -1638,14 +1638,12 @@ def create_scan(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     scan_tier = payload.scan_tier.strip().lower()
-    if scan_tier not in {"free_preview", "full_scan"}:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan tier must be free_preview or full_scan.")
-    if assessment_mode == "ethical_pentesting" and scan_tier != "full_scan":
+    if scan_tier != "full_scan":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ethical Pen-Testing is a paid full testing service only.",
+            detail="Free vulnerability testing has been removed. Select Vulnerability Assessment or Ethical Pen-Testing.",
         )
-    selected_backend = "free_preview" if scan_tier == "free_preview" else resolve_backend_name(settings, asset_type, assessment_mode)
+    selected_backend = resolve_backend_name(settings, asset_type, assessment_mode)
 
     try:
         authorization = authorize_target(user["email_domain"], payload.target, asset_type)
@@ -1658,16 +1656,7 @@ def create_scan(
 
     now = utcnow().isoformat()
     scan_protocols = build_scan_protocols(asset_type, authorization["target_kind"], assessment_mode)
-    if scan_tier == "free_preview":
-        scan_protocols.extend(
-            [
-                "Free vulnerability preview: limited, non-invasive checks only",
-                "Summary report displayed in the web interface",
-                "PDF delivery requires a paid full scan",
-            ]
-        )
-    else:
-        scan_protocols.append("Full scan: deeper testing with PDF report delivery to verified email")
+    scan_protocols.append("Full scan: deeper testing with PDF report delivery to verified email")
     if assessment_mode == "ethical_pentesting":
         depth = payload.pentest_depth.strip().lower()
         if depth not in {"standard", "deep"}:
