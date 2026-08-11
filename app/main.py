@@ -431,6 +431,8 @@ def _is_client_viewer(user: Row) -> bool:
 
 
 def _require_entitlement(connection, user: Row) -> None:
+    if settings.payment_demo_mode:
+        return
     if _active_entitlement(connection, user["organization_id"]) is None:
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Completed one-time payment required.")
 
@@ -1848,7 +1850,6 @@ def create_scan(
         if payload.known_vulnerabilities:
             scan_protocols.append(f"Known vulnerabilities to validate: {payload.known_vulnerabilities.strip()}")
 
-    needs_report_intake = scan_tier == "full_scan" or assessment_mode == "ethical_pentesting"
     report_company_name = _clean_optional(payload.report_company_name)
     report_company_address = _clean_optional(payload.report_company_address)
     report_contact_name = _clean_optional(payload.report_contact_name)
@@ -1858,7 +1859,19 @@ def create_scan(
     report_scope_notes = _clean_optional(payload.report_scope_notes)
     report_testing_window = _clean_optional(payload.report_testing_window)
     report_emergency_contact = _clean_optional(payload.report_emergency_contact)
-    if needs_report_intake and not payload.engagement_id:
+    report_values = [
+        report_company_name,
+        report_company_address,
+        report_contact_name,
+        report_contact_email,
+        report_contact_phone,
+        report_authorization_reference,
+        report_scope_notes,
+        report_testing_window,
+        report_emergency_contact,
+    ]
+    report_intake_requested = any(report_values)
+    if report_intake_requested and not payload.engagement_id:
         missing_report_fields = [
             label
             for label, value in [
@@ -1877,7 +1890,7 @@ def create_scan(
         if missing_report_fields:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Complete report details before launching this service: {', '.join(missing_report_fields)}.",
+                detail=f"Complete all optional report details or hide the report section before launching this service: {', '.join(missing_report_fields)}.",
             )
 
     with get_connection() as connection:
@@ -1935,7 +1948,7 @@ def create_scan(
             ).fetchone()
             if engagement is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engagement not found.")
-        elif needs_report_intake:
+        elif report_intake_requested:
             cursor = connection.execute(
                 """
                 INSERT INTO engagements (

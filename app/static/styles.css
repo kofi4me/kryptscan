@@ -1017,6 +1017,24 @@ button.ghost {
   box-shadow: 0 16px 34px rgba(20, 32, 51, 0.07);
 }
 
+.optional-report-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.optional-report-actions p {
+  margin: 0;
+  flex: 1 1 280px;
+}
+
+.optional-report-actions .ghost.active {
+  color: var(--cobalt);
+  border-color: rgba(47, 99, 255, 0.32);
+  background: rgba(47, 99, 255, 0.09);
+}
+
 .report-intake h3 {
   margin: 0.2rem 0 0;
 }

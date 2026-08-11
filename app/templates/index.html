@@ -345,6 +345,13 @@
               <span>Domain name or IP address</span>
               <input id="target-input" type="text" placeholder="example.com or 203.0.113.10" required />
             </label>
+            <button id="scan-submit-button" type="submit">Run Vulnerability Assessment</button>
+            <div class="optional-report-actions">
+              <button id="report-intake-toggle-button" type="button" class="ghost">Submit Report</button>
+              <p class="inline-copy">
+                Optional: complete this only when you want client and target owner details attached to the PDF report.
+              </p>
+            </div>
             <section id="report-intake-fields" class="report-intake hidden">
               <div class="section-head">
                 <div>
@@ -433,7 +440,6 @@
                 ></textarea>
               </label>
             </div>
-            <button id="scan-submit-button" type="submit">Run Vulnerability Assessment</button>
           </form>
 
           <section id="payment-panel" class="engagement-form">

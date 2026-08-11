@@ -5,6 +5,7 @@ const state = {
   activeScanId: null,
   assessmentMode: "vulnerability_assessment",
   scanTier: "full_scan",
+  reportIntakeEnabled: false,
   refreshTimer: null,
   verificationTimer: null,
   verificationExpiresAt: null,
@@ -24,6 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("password-reset-request-form").addEventListener("submit", handlePasswordResetRequest);
   document.getElementById("password-reset-confirm-form").addEventListener("submit", handlePasswordResetConfirm);
   document.getElementById("scan-form").addEventListener("submit", handleCreateScan);
+  document.getElementById("report-intake-toggle-button").addEventListener("click", toggleReportIntake);
   document.getElementById("manual-finding-form").addEventListener("submit", handleAddManualFinding);
   document.querySelectorAll("[data-plan]").forEach((button) => {
     button.addEventListener("click", () => handleCheckoutPlan(button.dataset.plan));
@@ -239,8 +241,8 @@ function selectScanTier(tier, options = {}) {
 function updateReportIntakeVisibility() {
   const panel = document.getElementById("report-intake-fields");
   if (!panel) return;
-  const required = true;
-  panel.classList.toggle("hidden", !required);
+  const required = Boolean(state.reportIntakeEnabled);
+  panel.classList.toggle("hidden", !state.reportIntakeEnabled);
   [
     "report-company-name-input",
     "report-company-address-input",
@@ -255,6 +257,16 @@ function updateReportIntakeVisibility() {
     const field = document.getElementById(id);
     if (field) field.required = required;
   });
+  const toggle = document.getElementById("report-intake-toggle-button");
+  if (toggle) {
+    toggle.textContent = state.reportIntakeEnabled ? "Hide Report Details" : "Submit Report";
+    toggle.classList.toggle("active", state.reportIntakeEnabled);
+  }
+}
+
+function toggleReportIntake() {
+  state.reportIntakeEnabled = !state.reportIntakeEnabled;
+  updateReportIntakeVisibility();
 }
 
 function updateScanSubmitText() {
@@ -554,12 +566,12 @@ async function handlePasswordResetConfirm(event) {
 
 async function handleCreateScan(event) {
   event.preventDefault();
+  setButtonBusy("scan-submit-button", true, "Launching...");
   const target = document.getElementById("target-input").value.trim();
   const assessment_mode = document.getElementById("assessment-mode-input").value;
   const scan_tier = "full_scan";
   const body = { target, assessment_mode, scan_tier };
-  const needsReportIntake = true;
-  if (needsReportIntake) {
+  if (state.reportIntakeEnabled) {
     body.report_company_name = document.getElementById("report-company-name-input").value.trim();
     body.report_company_address = document.getElementById("report-company-address-input").value.trim();
     body.report_contact_name = document.getElementById("report-contact-name-input").value.trim();
@@ -581,42 +593,47 @@ async function handleCreateScan(event) {
     body.known_vulnerabilities = document.getElementById("known-vulnerabilities-input").value.trim() || null;
   }
 
-  const { response, payload } = await fetchJson("/api/scans", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  try {
+    const { response, payload } = await fetchJson("/api/scans", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
 
-  if (!response.ok) {
-    setStatus("dashboard-status", formatApiError(payload, "Unable to launch assessment."), "error");
-    return;
-  }
-
-  let deliveryNote = "";
-  if (payload.status === "completed") {
-    if (payload.report_email_sent_at) {
-      deliveryNote = " PDF report emailed to your verified work address.";
-    } else if (payload.report_email_error) {
-      deliveryNote = ` Report created, but email delivery failed: ${payload.report_email_error}.`;
-    } else if (payload.report_pdf_available) {
-      deliveryNote = " PDF report is ready in the dashboard.";
+    if (!response.ok) {
+      setStatus("dashboard-status", formatApiError(payload, "Unable to launch assessment."), "error");
+      return;
     }
-  } else if (payload.status === "queued") {
-    deliveryNote = " The scan is queued and will run in the background.";
-  } else if (payload.status === "running") {
-    deliveryNote = " The scan is running in the background.";
-  }
 
-  setStatus(
-    "dashboard-status",
-    `${formatMode(payload.assessment_mode)} created for ${payload.target}. Current status: ${payload.status}.${deliveryNote}`,
-    "success"
-  );
-  document.getElementById("scan-form").reset();
-  selectAssessmentMode(state.assessmentMode);
-  selectScanTier("full_scan", { silent: true });
-  await loadDashboard(true);
-  if (payload.status === "completed") {
-    await loadReport(payload.id);
+    let deliveryNote = "";
+    if (payload.status === "completed") {
+      if (payload.report_email_sent_at) {
+        deliveryNote = " PDF report emailed to your verified work address.";
+      } else if (payload.report_email_error) {
+        deliveryNote = ` Report created, but email delivery failed: ${payload.report_email_error}.`;
+      } else if (payload.report_pdf_available) {
+        deliveryNote = " PDF report is ready in the dashboard.";
+      }
+    } else if (payload.status === "queued") {
+      deliveryNote = " The scan is queued and will run in the background.";
+    } else if (payload.status === "running") {
+      deliveryNote = " The scan is running in the background.";
+    }
+
+    setStatus(
+      "dashboard-status",
+      `${formatMode(payload.assessment_mode)} created for ${payload.target}. Current status: ${payload.status}.${deliveryNote}`,
+      "success"
+    );
+    document.getElementById("scan-form").reset();
+    state.reportIntakeEnabled = false;
+    selectAssessmentMode(state.assessmentMode);
+    selectScanTier("full_scan", { silent: true });
+    await loadDashboard(true);
+    if (payload.status === "completed") {
+      await loadReport(payload.id);
+    }
+  } finally {
+    setButtonBusy("scan-submit-button", false);
   }
 }
 
