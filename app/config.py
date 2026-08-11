@@ -100,6 +100,7 @@ class Settings:
     cloud_checks_enabled: bool
     kryptnet_payment_api_url: str
     kryptnet_payment_webhook_secret: str
+    payment_required: bool
     payment_demo_mode: bool
     openai_api_key: str
     openai_base_url: str
@@ -191,6 +192,7 @@ def get_settings() -> Settings:
         cloud_checks_enabled=_env_bool("CLOUD_CHECKS_ENABLED", False),
         kryptnet_payment_api_url=_env("KRYPTNET_PAYMENT_API_URL", "https://payments.kryptnet.com/api"),
         kryptnet_payment_webhook_secret=_env("KRYPTNET_PAYMENT_WEBHOOK_SECRET", ""),
+        payment_required=_env_bool("PAYMENT_REQUIRED", False),
         payment_demo_mode=_env_bool("PAYMENT_DEMO_MODE", False),
         openai_api_key=_env("OPENAI_API_KEY", ""),
         openai_base_url=_env("OPENAI_BASE_URL", "https://api.openai.com/v1"),

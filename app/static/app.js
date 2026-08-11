@@ -567,7 +567,13 @@ async function handlePasswordResetConfirm(event) {
 async function handleCreateScan(event) {
   event.preventDefault();
   setButtonBusy("scan-submit-button", true, "Launching...");
+  setStatus("dashboard-status", "Preparing scan request and contacting the scanner service...", "neutral");
   const target = document.getElementById("target-input").value.trim();
+  if (!target) {
+    setStatus("dashboard-status", "Enter a domain name or IP address before launching the assessment.", "error");
+    setButtonBusy("scan-submit-button", false);
+    return;
+  }
   const assessment_mode = document.getElementById("assessment-mode-input").value;
   const scan_tier = "full_scan";
   const targetAuthorizationAccepted = document.getElementById("target-authorization-input").checked;
@@ -643,6 +649,12 @@ async function handleCreateScan(event) {
     if (payload.status === "completed") {
       await loadReport(payload.id);
     }
+  } catch (error) {
+    setStatus(
+      "dashboard-status",
+      `Unable to contact the scanning API. Refresh the page and try again. Technical detail: ${error.message || error}`,
+      "error"
+    );
   } finally {
     setButtonBusy("scan-submit-button", false);
   }

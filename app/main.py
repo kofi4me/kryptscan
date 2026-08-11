@@ -431,7 +431,7 @@ def _is_client_viewer(user: Row) -> bool:
 
 
 def _require_entitlement(connection, user: Row) -> None:
-    if settings.payment_demo_mode:
+    if not settings.payment_required or settings.payment_demo_mode:
         return
     if _active_entitlement(connection, user["organization_id"]) is None:
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Completed one-time payment required.")
