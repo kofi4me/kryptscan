@@ -135,8 +135,11 @@ SMTP_USERNAME=<smtp-user>
 SMTP_PASSWORD=<smtp-password>
 KRYPTNET_PAYMENT_WEBHOOK_SECRET=<real-webhook-secret>
 PAYMENT_DEMO_MODE=false
+PAYMENT_REQUIRED=false
 OPENAI_API_KEY=<openai-api-key>
-SCANNER_BACKEND=kryptnet_toolkit
+SCANNER_BACKEND=worker
+SCANNER_WORKER_URL=http://kryptnet-scanner:8000
+SCANNER_MIN_FULL_SCAN_SECONDS=600
 ALLOW_PRIVATE_NETWORK_TARGETS=false
 ```
 
@@ -165,7 +168,7 @@ curl https://kryptscan.kryptnet.org/health
 Expected:
 
 ```json
-{"status":"ok","app":"Kryptnet Security Assessment","scanner_backend":"kryptnet_toolkit"}
+{"status":"ok","app":"Kryptnet Security Assessment","scanner_backend":"worker"}
 ```
 
 Open:
@@ -193,10 +196,10 @@ docker compose --env-file .env.scanner -f docker-compose.production.yml logs -f 
 1. Open `https://kryptscan.kryptnet.org`.
 2. Verify email with OTP.
 3. Complete registration.
-4. Run a free vulnerability scan.
-5. Confirm the free scan shows web-only summary.
-6. Try Full Scan and confirm payment is required.
-7. Confirm Ethical Pen-Testing has no free option.
+4. Select Vulnerability Assessment or Ethical Pen-Testing.
+5. Enter an authorized target and confirm target authorization.
+6. Confirm the scanner worker health shows the installed tools.
+7. For pre-payment testing, keep `PAYMENT_REQUIRED=false`. After payment API integration, set `PAYMENT_REQUIRED=true`.
 8. Configure payment webhook:
 
 ```text
@@ -204,8 +207,43 @@ POST https://kryptscan.kryptnet.org/api/payments/webhook/kryptnet
 Header: X-KryptNet-Webhook-Secret
 ```
 
-9. Confirm paid scan creates/downloads PDF report.
+9. Confirm the scan progresses through staged scanner work and creates/downloads a PDF report.
 10. Check Scanner Health in the dashboard.
+
+## Scanner Worker Quality Controls
+
+Full scans use the scanner worker and should not complete as an instant mock result. The worker uses:
+
+```env
+SCANNER_BACKEND=worker
+SCANNER_WORKER_URL=http://kryptnet-scanner:8000
+SCANNER_TOOL_TIMEOUT_SECONDS=300
+SCANNER_MAX_OUTPUT_CHARS=30000
+SCANNER_MIN_FULL_SCAN_SECONDS=600
+OPENAI_API_KEY=<openai-api-key>
+OPENAI_MODEL=gpt-5-mini
+OPENAI_BASE_URL=https://api.openai.com/v1
+CLOUD_CHECKS_ENABLED=false
+```
+
+Set `SCANNER_MIN_FULL_SCAN_SECONDS=600` for a 10-minute professional scan window. Lower it only for development smoke tests.
+
+If Scanner Health still shows missing tools after code updates, rebuild and restart the scanner worker:
+
+```bash
+cd /opt/kryptnet-services/kryptscan-app
+git pull
+docker-compose -f docker-compose.scanner.yml build --no-cache
+docker-compose -f docker-compose.scanner.yml up -d
+curl -s http://127.0.0.1:5200/health
+```
+
+Remaining optional items:
+
+- `OpenAI AI triage` becomes available when `OPENAI_API_KEY` is present in the scanner worker environment.
+- `Cloud credential checks` becomes available when `CLOUD_CHECKS_ENABLED=true` and the MSP has a cloud-readiness process.
+- `Greenbone/OpenVAS Python client` requires `python-gvm` plus a running Greenbone/OpenVAS service.
+- ZAP, Gitleaks, Prowler, and ScoutSuite require the updated scanner worker image to be rebuilt if an older container is still running.
 
 ## 11. Updating the App
 

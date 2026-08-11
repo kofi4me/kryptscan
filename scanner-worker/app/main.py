@@ -7,6 +7,9 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
+import urllib.error
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +26,11 @@ WORKER_TOKEN = os.getenv("SCANNER_WORKER_TOKEN", "")
 ALLOW_PRIVATE_TARGETS = os.getenv("ALLOW_PRIVATE_NETWORK_TARGETS", "false").lower() in {"1", "true", "yes"}
 MAX_TOOL_TIMEOUT = int(os.getenv("SCANNER_TOOL_TIMEOUT_SECONDS", "180"))
 MAX_OUTPUT_CHARS = int(os.getenv("SCANNER_MAX_OUTPUT_CHARS", "20000"))
+MIN_FULL_SCAN_SECONDS = int(os.getenv("SCANNER_MIN_FULL_SCAN_SECONDS", "600"))
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
+CLOUD_CHECKS_ENABLED = os.getenv("CLOUD_CHECKS_ENABLED", "false").lower() in {"1", "true", "yes"}
 
 app = FastAPI(title="KryptScan Scanner Worker")
 JOBS: dict[str, dict] = {}
@@ -145,6 +153,108 @@ def _risk_indicator(target: str, tool: str, output: str, category: str) -> Findi
     )
 
 
+def _http_status_finding(target: str, output: str) -> Finding | None:
+    lower = output.lower()
+    if "http://" not in lower and "https://" not in lower and "[" not in output:
+        return None
+    if any(code in lower for code in ["[500]", "[403]", "[401]", "[302]", "[301]"]):
+        return _finding(
+            target,
+            "HTTP surface requires security review",
+            "medium",
+            "Web/API Surface",
+            "httpx",
+            output,
+            "Review exposed web paths, redirects, authentication boundaries, headers, and externally visible panels.",
+            5.4,
+        )
+    return None
+
+
+def _ai_triage_finding(target: str, findings: list[Finding]) -> Finding:
+    if not OPENAI_API_KEY:
+        return _finding(
+            target,
+            "AI triage is not configured",
+            "info",
+            "AI Reporting",
+            "openai",
+            "OPENAI_API_KEY is not configured in the scanner worker environment.",
+            "Add OPENAI_API_KEY, OPENAI_MODEL, and OPENAI_BASE_URL to the scanner worker environment to enable AI-assisted explanations.",
+        )
+    evidence_items = [
+        {
+            "title": item.title,
+            "severity": item.severity,
+            "category": item.category,
+            "service": item.service,
+            "description": item.description[:400],
+            "remediation": item.remediation[:400],
+        }
+        for item in findings
+        if item.severity in {"critical", "high", "medium"}
+    ][:12]
+    prompt = {
+        "target": target,
+        "finding_count": len(findings),
+        "priority_findings": evidence_items,
+        "task": (
+            "Explain the business danger and mitigation priorities for an authorized vulnerability "
+            "assessment report. Do not include exploit steps, payloads, or instructions for unauthorized access."
+        ),
+    }
+    request = urllib.request.Request(
+        f"{OPENAI_BASE_URL.rstrip('/')}/responses",
+        data=json.dumps(
+            {
+                "model": OPENAI_MODEL,
+                "instructions": "You are a cybersecurity report writer for ethical, authorized assessments.",
+                "input": json.dumps(prompt),
+            }
+        ).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        return _finding(
+            target,
+            "AI triage API error",
+            "info",
+            "AI Reporting",
+            "openai",
+            str(exc),
+            "Verify the OpenAI API key, model, base URL, and outbound HTTPS access from the scanner worker.",
+        )
+    text = _extract_openai_text(payload) or "AI triage completed but no narrative text was returned."
+    return _finding(
+        target,
+        "AI-assisted risk explanation and remediation priorities",
+        "info",
+        "AI Reporting",
+        "openai",
+        text,
+        "Use the AI-assisted narrative to brief business owners, then validate and approve final wording before client delivery.",
+    )
+
+
+def _extract_openai_text(payload: dict) -> str:
+    if isinstance(payload.get("output_text"), str):
+        return payload["output_text"]
+    parts = []
+    for item in payload.get("output", []) or []:
+        for content in item.get("content", []) or []:
+            text = content.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    return "\n".join(parts)
+
+
 def _tool_plan(target: str, payload: ScanRequest) -> list[tuple[str, list[str], str]]:
     host = _validate_target(target)
     url = _url(target)
@@ -186,17 +296,47 @@ def _tool_plan(target: str, payload: ScanRequest) -> list[tuple[str, list[str], 
 
 
 def _run_scan(payload: ScanRequest) -> dict:
+    started = time.monotonic()
     target = _validate_target(payload.target)
     findings: list[Finding] = []
+    stage_results: list[str] = []
     with tempfile.TemporaryDirectory(prefix="kryptscan-") as tmp:
         output_dir = Path(tmp)
         for tool, command, category in _tool_plan(target, payload):
+            stage_started = time.monotonic()
             ok, output = _run(command, output_dir)
+            elapsed = round(time.monotonic() - stage_started, 1)
+            stage_results.append(f"{tool}: {'completed' if ok else 'not available/error'} in {elapsed}s")
             findings.append(_tool_finding(target, tool, ok, output, category))
             risk = _risk_indicator(target, tool, output, category) if ok else None
             if risk is not None:
                 findings.append(risk)
+            if tool == "httpx" and ok:
+                http_risk = _http_status_finding(target, output)
+                if http_risk is not None:
+                    findings.append(http_risk)
 
+    findings.append(_ai_triage_finding(target, findings))
+    elapsed = time.monotonic() - started
+    minimum_seconds = MIN_FULL_SCAN_SECONDS if payload.scan_tier == "full_scan" else 0
+    if minimum_seconds > 0 and elapsed < minimum_seconds:
+        remaining = round(minimum_seconds - elapsed)
+        findings.append(
+            _finding(
+                target,
+                "Professional scan dwell time enforced",
+                "info",
+                "Assessment Quality",
+                "scanner-worker",
+                (
+                    f"Tool execution completed in {round(elapsed, 1)} seconds. KryptScan held the scan window "
+                    f"for an additional {remaining} seconds to support staged progress tracking, report review, "
+                    "and a non-instant full assessment workflow."
+                ),
+                "Use the staged window to review progress indicators and avoid treating a full assessment as a shallow instant check.",
+            )
+        )
+        time.sleep(remaining)
     report = build_assessment_report(target, findings)
     mode_label = "Ethical Pen-Testing" if payload.assessment_mode == "ethical_pentesting" else "Vulnerability Assessment"
     report = report.model_copy(
@@ -204,7 +344,9 @@ def _run_scan(payload: ScanRequest) -> dict:
             "scan_protocols": [
                 *payload.scan_protocols,
                 "Scanner worker executed the containerized safe tool profile",
+                *stage_results,
                 "Private/reserved target policy enforced before tool execution",
+                "AI triage attempted for business danger and remediation explanation",
                 "Tool output normalized into KryptScan reporting schema",
             ],
             "scope_summary": f"{mode_label} worker scan for {target}. Tier: {payload.scan_tier}.",
@@ -223,6 +365,7 @@ def health() -> dict:
         "nikto",
         "whatweb",
         "wafw00f",
+        "zap-baseline.py",
         "httpx",
         "naabu",
         "dnsx",
@@ -234,11 +377,33 @@ def health() -> dict:
         "gitleaks",
         "grype",
         "checkov",
+        "prowler",
+        "ScoutSuite",
     ]
+    python_gvm_available = False
+    try:
+        import gvm  # noqa: F401
+
+        python_gvm_available = True
+    except Exception:
+        python_gvm_available = False
+    available_tools = {tool: bool(shutil.which(tool)) for tool in tools}
+    scoutsuite_available = bool(shutil.which("ScoutSuite") or shutil.which("scoutsuite"))
+    available_tools["ScoutSuite"] = scoutsuite_available
+    available_tools["scoutsuite"] = scoutsuite_available
+    available_tools.update(
+        {
+            "zap": available_tools.get("zap-baseline.py", False),
+            "python-gvm": python_gvm_available,
+            "openai": bool(OPENAI_API_KEY),
+            "cloud-checks": CLOUD_CHECKS_ENABLED,
+        }
+    )
     return {
         "status": "ok",
         "time": datetime.now(timezone.utc).isoformat(),
-        "available_tools": {tool: bool(shutil.which(tool)) for tool in tools},
+        "min_full_scan_seconds": MIN_FULL_SCAN_SECONDS,
+        "available_tools": available_tools,
     }
 
 

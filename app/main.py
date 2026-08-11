@@ -952,6 +952,9 @@ def _merge_worker_tool_health(tools: list[dict]) -> tuple[list[dict], bool]:
         "Checkov": "checkov",
         "Prowler": "prowler",
         "ScoutSuite": "scoutsuite",
+        "Greenbone/OpenVAS Python client": "python-gvm",
+        "OpenAI AI triage": "openai",
+        "Cloud credential checks": "cloud-checks",
     }
     merged = []
     for tool in tools:

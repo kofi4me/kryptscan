@@ -8,6 +8,12 @@ services:
       - "8000:8000"
     env_file:
       - .env.scanner
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
+      CLOUD_CHECKS_ENABLED: ${CLOUD_CHECKS_ENABLED:-false}
+      SCANNER_MIN_FULL_SCAN_SECONDS: ${SCANNER_MIN_FULL_SCAN_SECONDS:-600}
     volumes:
       - ./data:/workspace/data
       - ./samples:/workspace/samples:ro
