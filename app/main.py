@@ -5,6 +5,8 @@ import ipaddress
 import re
 import secrets
 import shutil
+import urllib.error
+import urllib.request
 from datetime import timedelta
 from pathlib import Path
 from sqlite3 import Row
@@ -904,6 +906,65 @@ def _tool_health(name: str, path_value: str, category: str) -> dict:
     }
 
 
+def _worker_available_tools() -> dict[str, bool]:
+    if settings.scanner_backend != "worker" or not settings.scanner_worker_url:
+        return {}
+    request = urllib.request.Request(
+        f"{settings.scanner_worker_url.rstrip('/')}/health",
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError, urllib.error.URLError):
+        return {}
+    available_tools = payload.get("available_tools")
+    if not isinstance(available_tools, dict):
+        return {}
+    return {str(name).lower(): bool(available) for name, available in available_tools.items()}
+
+
+def _merge_worker_tool_health(tools: list[dict]) -> tuple[list[dict], bool]:
+    worker_tools = _worker_available_tools()
+    if not worker_tools:
+        return tools, False
+    aliases = {
+        "Nuclei": "nuclei",
+        "Nmap": "nmap",
+        "Naabu": "naabu",
+        "OWASP ZAP baseline": "zap",
+        "Nikto": "nikto",
+        "ProjectDiscovery httpx": "httpx",
+        "Katana": "katana",
+        "WhatWeb": "whatweb",
+        "wafw00f": "wafw00f",
+        "SSLyze": "sslyze",
+        "testssl.sh": "testssl.sh",
+        "Amass": "amass",
+        "Subfinder": "subfinder",
+        "dnsx": "dnsx",
+        "Trivy": "trivy",
+        "Semgrep": "semgrep",
+        "Gitleaks": "gitleaks",
+        "Grype": "grype",
+        "Checkov": "checkov",
+        "Prowler": "prowler",
+        "ScoutSuite": "scoutsuite",
+    }
+    merged = []
+    for tool in tools:
+        worker_key = aliases.get(tool["name"])
+        if worker_key and worker_key in worker_tools:
+            tool = {
+                **tool,
+                "available": worker_tools[worker_key],
+                "resolved_path": "scanner worker" if worker_tools[worker_key] else tool.get("resolved_path"),
+                "source": "worker",
+            }
+        merged.append(tool)
+    return merged, True
+
+
 @app.get("/api/scanner-health")
 def scanner_health(user: Row = Depends(get_current_user)) -> dict:
     _require_owner_or_analyst(user)
@@ -955,11 +1016,14 @@ def scanner_health(user: Row = Depends(get_current_user)) -> dict:
             "resolved_path": "enabled" if settings.cloud_checks_enabled else None,
         }
     )
+    tools, worker_connected = _merge_worker_tool_health(tools)
     available = sum(1 for tool in tools if tool["available"])
     return {
         "available": available,
         "missing": len(tools) - available,
         "tools": tools,
+        "backend": settings.scanner_backend,
+        "worker_connected": worker_connected,
     }
 
 

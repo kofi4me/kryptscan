@@ -869,6 +869,9 @@ function renderScannerHealth(payload) {
   const element = document.getElementById("scanner-health-grid");
   if (!element) return;
   const tools = payload.tools || [];
+  const sourceText = payload.worker_connected
+    ? "Worker scanner connected. Availability is read from the scanner server."
+    : "Install missing tools on the scanner server before relying on full production coverage.";
   element.innerHTML = `
     <article class="tool-card">
       <strong>Scanner Health</strong>
@@ -876,7 +879,7 @@ function renderScannerHealth(payload) {
         <span>${payload.available ?? 0} available</span>
         <span>${payload.missing ?? 0} missing</span>
       </div>
-      <p>Install missing tools on the scanner server before relying on full production coverage.</p>
+      <p>${escapeHtml(sourceText)}</p>
     </article>
     ${tools
       .map(
