@@ -570,7 +570,18 @@ async function handleCreateScan(event) {
   const target = document.getElementById("target-input").value.trim();
   const assessment_mode = document.getElementById("assessment-mode-input").value;
   const scan_tier = "full_scan";
-  const body = { target, assessment_mode, scan_tier };
+  const targetAuthorizationAccepted = document.getElementById("target-authorization-input").checked;
+  if (!targetAuthorizationAccepted) {
+    setStatus("dashboard-status", "Confirm target ownership or written authorization before launching the assessment.", "error");
+    setButtonBusy("scan-submit-button", false);
+    return;
+  }
+  const body = {
+    target,
+    assessment_mode,
+    scan_tier,
+    target_authorization_accepted: targetAuthorizationAccepted,
+  };
   if (state.reportIntakeEnabled) {
     body.report_company_name = document.getElementById("report-company-name-input").value.trim();
     body.report_company_address = document.getElementById("report-company-address-input").value.trim();

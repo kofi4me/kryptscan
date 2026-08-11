@@ -1071,6 +1071,10 @@ button.ghost {
   margin-top: 0.15rem;
 }
 
+.target-authorization-check span {
+  color: var(--muted);
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

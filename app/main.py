@@ -1810,9 +1810,19 @@ def create_scan(
             detail="Free vulnerability testing has been removed. Select Vulnerability Assessment or Ethical Pen-Testing.",
         )
     selected_backend = resolve_backend_name(settings, asset_type, assessment_mode)
+    if not payload.target_authorization_accepted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Confirm target ownership or written authorization before launching the assessment.",
+        )
 
     try:
-        authorization = authorize_target(user["email_domain"], payload.target, asset_type)
+        authorization = authorize_target(
+            user["email_domain"],
+            payload.target,
+            asset_type,
+            allow_attested_external=payload.target_authorization_accepted,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     _require_target_network_policy(

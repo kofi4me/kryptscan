@@ -63,6 +63,7 @@ class ScanCreateRequest(BaseModel):
     assessment_mode: str = "vulnerability_assessment"
     scan_tier: str = "full_scan"
     engagement_id: int | None = None
+    target_authorization_accepted: bool = False
     report_company_name: str | None = Field(default=None, max_length=180)
     report_company_address: str | None = Field(default=None, max_length=300)
     report_contact_name: str | None = Field(default=None, max_length=160)

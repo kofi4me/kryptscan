@@ -109,6 +109,7 @@ def authorize_target(
     organization_domain: str,
     target: str,
     asset_type: str,
+    allow_attested_external: bool = False,
 ) -> dict:
     normalized_domain = normalize_domain(organization_domain)
     normalized_target, target_kind = normalize_target(target, asset_type)
@@ -125,9 +126,19 @@ def authorize_target(
                 ),
                 "target_kind": target_kind,
             }
+        if allow_attested_external:
+            return {
+                "normalized_target": normalized_target,
+                "authorization_method": "verified-user-target-attestation",
+                "verification_note": (
+                    "Website target is outside the verified email domain and was accepted "
+                    "because the verified user attested they own the target or have written authorization."
+                ),
+                "target_kind": target_kind,
+            }
         raise ValueError(
             "Website target is outside the verified ownership domain. "
-            "Use a work email from the same domain as the site you want to assess."
+            "Confirm written authorization for this target before launching the assessment."
         )
 
     if target_kind in {"ip", "cidr"}:
@@ -154,6 +165,18 @@ def authorize_target(
             "target_kind": target_kind,
         }
 
+    if allow_attested_external:
+        return {
+            "normalized_target": normalized_target,
+            "authorization_method": "verified-user-target-attestation",
+            "verification_note": (
+                "Network hostname is outside the verified email domain and was accepted "
+                "because the verified user attested they own the target or have written authorization."
+            ),
+            "target_kind": target_kind,
+        }
+
     raise ValueError(
-        "Network hostname is outside the verified organization domain."
+        "Network hostname is outside the verified organization domain. "
+        "Confirm written authorization for this target before launching the assessment."
     )
