@@ -5,6 +5,7 @@ import ipaddress
 import re
 import secrets
 import shutil
+import time
 import urllib.error
 import urllib.request
 from datetime import timedelta
@@ -759,6 +760,7 @@ def _store_completed_scan(
 
 
 def _run_scan_job(scan_id: int, user_id: int) -> None:
+    job_started = time.monotonic()
     user = auth_service.get_user_by_id(user_id)
     if user is None:
         return
@@ -814,6 +816,19 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
         return
 
     if scheduled.report is not None:
+        minimum_seconds = settings.scanner_min_full_scan_seconds if (scan["scan_tier"] or "full_scan") == "full_scan" else 0
+        elapsed = time.monotonic() - job_started
+        if minimum_seconds > 0 and elapsed < minimum_seconds:
+            _update_scan_progress(
+                scan_id,
+                user["organization_id"],
+                70,
+                (
+                    "Scanner evidence received. Holding the full assessment window for staged "
+                    "quality review, AI triage, and report preparation."
+                ),
+            )
+            time.sleep(round(minimum_seconds - elapsed))
         _update_scan_progress(scan_id, user["organization_id"], 90, "Scanner results received. Building professional report.")
         create_pdf = (scan["scan_tier"] or "full_scan") == "full_scan"
         _store_completed_scan(
