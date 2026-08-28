@@ -5,7 +5,7 @@ services:
       dockerfile: scanner-worker/Dockerfile
     container_name: kryptnet-scanner
     ports:
-      - "8000:8000"
+      - "5200:8000"
     env_file:
       - .env.scanner
     environment:
