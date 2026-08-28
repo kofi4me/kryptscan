@@ -911,9 +911,9 @@ function renderScannerHealth(payload) {
   const tools = payload.tools || [];
   const sourceText = payload.worker_connected
     ? "Worker scanner connected. Availability is read from the scanner server."
-    : "Install missing tools on the scanner server before relying on full production coverage.";
+    : "Scanner worker is not reachable from the web app. Restart or rebuild the worker before production scans.";
   element.innerHTML = `
-    <article class="tool-card">
+    <article class="tool-card scanner-health-card">
       <strong>Scanner Health</strong>
       <div class="meta-line">
         <span>${payload.available ?? 0} available</span>
@@ -1237,6 +1237,10 @@ function renderBars(elementId, items) {
 
 function renderTrend(elementId, points) {
   const element = document.getElementById(elementId);
+  if (!points || !points.length) {
+    element.innerHTML = `<div class="empty-chart">Trend data appears after multiple completed assessments.</div>`;
+    return;
+  }
   const values = points.map((point) => Number(point.value || 0));
   const max = Math.max(...values, 1);
   const width = 360;
@@ -1251,16 +1255,26 @@ function renderTrend(elementId, points) {
       return `${x},${y}`;
     })
     .join(" ");
+  const areaPath = polyline ? `M ${polyline.split(" ")[0]} L ${polyline} L ${width - padding},${height - padding} L ${padding},${height - padding} Z` : "";
 
   element.innerHTML = `
     <svg viewBox="0 0 ${width} ${height}" fill="none" aria-label="Risk trend">
-      <path d="M ${padding} ${height - padding} H ${width - padding}" stroke="rgba(20,32,51,0.12)" />
-      <polyline points="${polyline}" stroke="#2f63ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+      <defs>
+        <linearGradient id="riskTrendFill" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="rgba(255,122,69,0.46)" />
+          <stop offset="100%" stop-color="rgba(47,99,255,0.02)" />
+        </linearGradient>
+      </defs>
+      <path d="M ${padding} ${padding} H ${width - padding}" stroke="rgba(168,196,255,0.12)" />
+      <path d="M ${padding} ${height / 2} H ${width - padding}" stroke="rgba(168,196,255,0.12)" />
+      <path d="M ${padding} ${height - padding} H ${width - padding}" stroke="rgba(168,196,255,0.18)" />
+      ${areaPath ? `<path d="${areaPath}" fill="url(#riskTrendFill)" />` : ""}
+      <polyline points="${polyline}" stroke="#73ccff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
       ${points
         .map((point, index) => {
           const x = padding + step * index;
           const y = height - padding - ((Number(point.value || 0) / max) * (height - padding * 2));
-          return `<circle cx="${x}" cy="${y}" r="5" fill="#ff7a45" />`;
+          return `<circle cx="${x}" cy="${y}" r="5" fill="#ff7a45" stroke="#0b1322" stroke-width="2" />`;
         })
         .join("")}
     </svg>

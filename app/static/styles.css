@@ -1249,19 +1249,19 @@ textarea {
 .status-card.success {
   background: rgba(42, 181, 127, 0.18);
   border-color: rgba(42, 181, 127, 0.32);
-  color: #d8fff0;
+  color: #0f5c40;
 }
 
 .status-card.error {
   background: rgba(217, 75, 55, 0.18);
   border-color: rgba(255, 126, 104, 0.34);
-  color: #ffd8d2;
+  color: #8f2d20;
 }
 
 .status-card.neutral {
   background: rgba(47, 99, 255, 0.14);
   border-color: rgba(47, 99, 255, 0.24);
-  color: #eaf0ff;
+  color: #173fbe;
 }
 
 .ops-rail {
@@ -1290,6 +1290,40 @@ textarea {
   border: 1px solid rgba(20, 32, 51, 0.08);
   box-shadow: var(--shadow-sm);
   border-radius: var(--radius-lg);
+}
+
+.scanner-health-card {
+  color: #f8fbff;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(115, 204, 255, 0.2), transparent 38%),
+    linear-gradient(135deg, #101d33, #162742);
+  border-color: rgba(168, 196, 255, 0.18);
+}
+
+.scanner-health-card strong {
+  color: #fff;
+}
+
+.scanner-health-card p,
+.scanner-health-card .meta-line {
+  color: #bfd0eb;
+}
+
+#scanner-health-grid .tool-card {
+  background:
+    linear-gradient(180deg, rgba(19, 34, 57, 0.96), rgba(12, 23, 40, 0.96));
+  border-color: rgba(168, 196, 255, 0.15);
+  color: #edf5ff;
+  box-shadow: 0 18px 44px rgba(8, 17, 31, 0.16);
+}
+
+#scanner-health-grid .tool-card strong {
+  color: #fff;
+}
+
+#scanner-health-grid .tool-card p,
+#scanner-health-grid .tool-card .meta-line {
+  color: #aebfda;
 }
 
 .readiness-card strong,
@@ -1350,6 +1384,47 @@ textarea {
   padding: 1.2rem;
 }
 
+.analytics-layout {
+  padding: 1.1rem;
+  border-radius: var(--radius-xl);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(47, 99, 255, 0.22), transparent 32%),
+    radial-gradient(circle at 88% 12%, rgba(42, 181, 127, 0.18), transparent 34%),
+    linear-gradient(135deg, #08111f 0%, #101c31 54%, #17243a 100%);
+  border: 1px solid rgba(168, 196, 255, 0.14);
+  box-shadow: 0 30px 90px rgba(8, 17, 31, 0.26);
+}
+
+.analytics-layout .chart-card,
+.analytics-layout .queue-panel,
+.analytics-layout .report-panel {
+  color: #edf5ff;
+  background:
+    linear-gradient(180deg, rgba(18, 31, 53, 0.96), rgba(11, 20, 36, 0.96));
+  border: 1px solid rgba(168, 196, 255, 0.14);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.24);
+}
+
+.analytics-layout .chart-head h3,
+.analytics-layout .scan-card strong,
+.analytics-layout .finding-card strong,
+.analytics-layout .check-card strong {
+  color: #f8fbff;
+}
+
+.analytics-layout .chart-head span,
+.analytics-layout .meta-line,
+.analytics-layout .inline-copy,
+.analytics-layout .summary-copy,
+.analytics-layout .trend-labels,
+.analytics-layout .bar-meta,
+.analytics-layout .report-context-grid p,
+.analytics-layout .report-context-grid ul,
+.analytics-layout .report-kpi small,
+.analytics-layout .remediation-card small {
+  color: #9fb0c9;
+}
+
 .chart-head span {
   font-size: 0.9rem;
 }
@@ -1376,7 +1451,7 @@ textarea {
 
 .bar-track {
   height: 12px;
-  background: rgba(20, 32, 51, 0.08);
+  background: rgba(168, 196, 255, 0.16);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -1384,11 +1459,38 @@ textarea {
 .bar-fill {
   height: 100%;
   border-radius: inherit;
+  background: linear-gradient(90deg, #2f63ff, #73ccff, #2ab57f);
+  box-shadow: 0 0 18px rgba(115, 204, 255, 0.38);
+}
+
+.scan-progress .bar-track {
+  height: 14px;
+  background: rgba(168, 196, 255, 0.18);
+  border: 1px solid rgba(168, 196, 255, 0.14);
+}
+
+.scan-progress .bar-fill {
+  min-width: 12px;
+  background: linear-gradient(90deg, #2f63ff 0%, #73ccff 46%, #2ab57f 100%);
+  box-shadow:
+    0 0 24px rgba(47, 99, 255, 0.36),
+    0 0 18px rgba(115, 204, 255, 0.32);
 }
 
 .trend-chart svg {
   width: 100%;
   height: 180px;
+}
+
+.empty-chart {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  color: #9fb0c9;
+  border: 1px dashed rgba(168, 196, 255, 0.2);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
 }
 
 .trend-labels {
@@ -1444,10 +1546,11 @@ textarea {
   border-radius: 24px;
   color: #f7f9fc;
   background:
-    radial-gradient(circle at 82% 10%, rgba(115, 204, 255, 0.2), transparent 30%),
-    linear-gradient(135deg, #0d1728 0%, #172745 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 22px 50px rgba(10, 18, 32, 0.18);
+    radial-gradient(circle at 82% 10%, rgba(115, 204, 255, 0.24), transparent 30%),
+    radial-gradient(circle at 12% 20%, rgba(47, 99, 255, 0.2), transparent 34%),
+    linear-gradient(135deg, #0a1425 0%, #12213a 62%, #0d2d35 100%);
+  border: 1px solid rgba(168, 196, 255, 0.16);
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.3);
 }
 
 .report-hero h3 {
@@ -1465,7 +1568,7 @@ textarea {
   height: 136px;
   border-radius: 50%;
   justify-self: end;
-  background: conic-gradient(var(--danger) var(--risk-angle), rgba(255, 255, 255, 0.1) 0);
+  background: conic-gradient(#ff5a4f var(--risk-angle), rgba(115, 204, 255, 0.16) 0);
   display: grid;
   place-items: center;
   box-shadow:
@@ -1519,14 +1622,14 @@ textarea {
   padding: 1rem;
   border-radius: 18px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(247, 250, 255, 0.98) 100%);
-  border: 1px solid rgba(20, 32, 51, 0.08);
-  box-shadow: var(--shadow-sm);
+    linear-gradient(180deg, rgba(22, 38, 64, 0.96) 0%, rgba(13, 24, 42, 0.96) 100%);
+  border: 1px solid rgba(168, 196, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .report-kpi span,
 .report-context-grid span {
-  color: var(--muted);
+  color: #91a7c7;
   font-size: 0.76rem;
   font-weight: 900;
   letter-spacing: 0.1em;
@@ -1536,6 +1639,7 @@ textarea {
 .report-kpi strong {
   font-family: "Sora", sans-serif;
   font-size: clamp(1.35rem, 2.4vw, 1.9rem);
+  color: #f8fbff;
 }
 
 .report-kpi small,
@@ -1554,8 +1658,8 @@ textarea {
   min-height: 150px;
   padding: 1rem;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(20, 32, 51, 0.08);
+  background: rgba(12, 24, 42, 0.82);
+  border: 1px solid rgba(168, 196, 255, 0.13);
 }
 
 .report-context-grid p {
@@ -1591,6 +1695,14 @@ textarea {
   align-items: flex-start;
   gap: 0.9rem;
   margin-bottom: 0.6rem;
+}
+
+.analytics-layout .scan-card,
+.analytics-layout .check-card,
+.analytics-layout .finding-card {
+  background: linear-gradient(180deg, rgba(19, 34, 57, 0.94), rgba(12, 23, 40, 0.94));
+  border: 1px solid rgba(168, 196, 255, 0.13);
+  box-shadow: none;
 }
 
 .finding-card {
