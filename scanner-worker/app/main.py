@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -34,6 +35,7 @@ CLOUD_CHECKS_ENABLED = os.getenv("CLOUD_CHECKS_ENABLED", "false").lower() in {"1
 
 app = FastAPI(title="KryptScan Scanner Worker")
 JOBS: dict[str, dict] = {}
+JOBS_LOCK = threading.Lock()
 
 
 class ScanRequest(BaseModel):
@@ -295,14 +297,40 @@ def _tool_plan(target: str, payload: ScanRequest) -> list[tuple[str, list[str], 
     return checks
 
 
-def _run_scan(payload: ScanRequest) -> dict:
+def _set_job_status(job_id: str | None, **updates: object) -> None:
+    if not job_id:
+        return
+    with JOBS_LOCK:
+        job = JOBS.get(job_id, {})
+        job.update(updates)
+        job["updated_at"] = datetime.now(timezone.utc).isoformat()
+        JOBS[job_id] = job
+
+
+def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
     started = time.monotonic()
     target = _validate_target(payload.target)
     findings: list[Finding] = []
     stage_results: list[str] = []
+    plan = list(_tool_plan(target, payload))
+    _set_job_status(
+        job_id,
+        status="running",
+        target=target,
+        progress_percent=20,
+        message="Scope validated. Preparing scanner workspace.",
+    )
     with tempfile.TemporaryDirectory(prefix="kryptscan-") as tmp:
         output_dir = Path(tmp)
-        for tool, command, category in _tool_plan(target, payload):
+        total = max(len(plan), 1)
+        for index, (tool, command, category) in enumerate(plan, start=1):
+            progress = min(78, 20 + round((index - 1) * 58 / total))
+            _set_job_status(
+                job_id,
+                status="running",
+                progress_percent=progress,
+                message=f"Running {tool} checks for {category.lower()}.",
+            )
             stage_started = time.monotonic()
             ok, output = _run(command, output_dir)
             elapsed = round(time.monotonic() - stage_started, 1)
@@ -316,6 +344,12 @@ def _run_scan(payload: ScanRequest) -> dict:
                 if http_risk is not None:
                     findings.append(http_risk)
 
+    _set_job_status(
+        job_id,
+        status="running",
+        progress_percent=82,
+        message="Normalizing scanner output and preparing AI-assisted triage.",
+    )
     findings.append(_ai_triage_finding(target, findings))
     elapsed = time.monotonic() - started
     minimum_seconds = MIN_FULL_SCAN_SECONDS if payload.scan_tier == "full_scan" else 0
@@ -336,7 +370,19 @@ def _run_scan(payload: ScanRequest) -> dict:
                 "Use the staged window to review progress indicators and avoid treating a full assessment as a shallow instant check.",
             )
         )
+        _set_job_status(
+            job_id,
+            status="running",
+            progress_percent=88,
+            message="Tool evidence collected. Completing the professional review window before final report generation.",
+        )
         time.sleep(remaining)
+    _set_job_status(
+        job_id,
+        status="running",
+        progress_percent=94,
+        message="Building the final report, graphs, risk metrics, and remediation priorities.",
+    )
     report = build_assessment_report(target, findings)
     mode_label = "Ethical Pen-Testing" if payload.assessment_mode == "ethical_pentesting" else "Vulnerability Assessment"
     report = report.model_copy(
@@ -353,6 +399,27 @@ def _run_scan(payload: ScanRequest) -> dict:
         }
     )
     return report.model_dump(mode="json")
+
+
+def _run_job(job_id: str, payload: ScanRequest) -> None:
+    try:
+        report = _run_scan(payload, job_id=job_id)
+    except Exception as exc:
+        _set_job_status(
+            job_id,
+            status="failed",
+            progress_percent=100,
+            message=f"Scanner worker failed: {exc}",
+            error=str(exc),
+        )
+        return
+    _set_job_status(
+        job_id,
+        status="completed",
+        progress_percent=100,
+        message="Scanner worker completed the approved toolchain and report.",
+        report=report,
+    )
 
 
 @app.get("/health")
@@ -379,6 +446,7 @@ def health() -> dict:
         "checkov",
         "prowler",
         "ScoutSuite",
+        "scout",
     ]
     python_gvm_available = False
     try:
@@ -388,7 +456,7 @@ def health() -> dict:
     except Exception:
         python_gvm_available = False
     available_tools = {tool: bool(shutil.which(tool)) for tool in tools}
-    scoutsuite_available = bool(shutil.which("ScoutSuite") or shutil.which("scoutsuite"))
+    scoutsuite_available = bool(shutil.which("ScoutSuite") or shutil.which("scoutsuite") or shutil.which("scout"))
     available_tools["ScoutSuite"] = scoutsuite_available
     available_tools["scoutsuite"] = scoutsuite_available
     available_tools.update(
@@ -411,15 +479,34 @@ def health() -> dict:
 def create_scan(payload: ScanRequest, authorization: str | None = Header(default=None)) -> dict:
     _auth(authorization)
     job_id = str(uuid.uuid4())
-    JOBS[job_id] = {"status": "running", "target": payload.target, "progress_percent": 20}
-    report = _run_scan(payload)
-    JOBS[job_id] = {"status": "completed", "target": payload.target, "progress_percent": 100, "report": report}
+    _set_job_status(
+        job_id,
+        status="running",
+        target=payload.target,
+        progress_percent=10,
+        message="Scanner worker accepted the job.",
+    )
+    if not payload.wait:
+        threading.Thread(target=_run_job, args=(job_id, payload), daemon=True).start()
+        return {"job_id": job_id, "status": "running", "message": "Scanner worker accepted the job."}
+
+    report = _run_scan(payload, job_id=job_id)
+    _set_job_status(
+        job_id,
+        status="completed",
+        target=payload.target,
+        progress_percent=100,
+        message="Scanner worker completed the job.",
+        report=report,
+    )
     return {"job_id": job_id, "status": "completed", "message": "Scanner worker completed the job.", "report": report}
 
 
 @app.get("/v1/scans/{job_id}")
 def get_scan(job_id: str, authorization: str | None = Header(default=None)) -> dict:
     _auth(authorization)
-    if job_id not in JOBS:
-        raise HTTPException(status_code=404, detail="Scanner job not found.")
-    return {"job_id": job_id, **JOBS[job_id]}
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Scanner job not found.")
+        return {"job_id": job_id, **job}

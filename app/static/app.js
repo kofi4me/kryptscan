@@ -918,21 +918,26 @@ function renderScannerHealth(payload) {
       <div class="meta-line">
         <span>${payload.available ?? 0} available</span>
         <span>${payload.missing ?? 0} missing</span>
+        <span>${payload.optional_pending ?? 0} setup needed</span>
       </div>
       <p>${escapeHtml(sourceText)}</p>
     </article>
     ${tools
       .map(
-        (tool) => `
+        (tool) => {
+          const statusLabel = tool.available ? "available" : tool.optional ? "setup needed" : "missing";
+          const statusClass = tool.available ? "completed" : tool.optional ? "running" : "warn";
+          return `
           <article class="tool-card">
             <strong>${escapeHtml(tool.name)}</strong>
             <div class="meta-line">
               <span>${escapeHtml(tool.category)}</span>
-              <span class="pill ${tool.available ? "completed" : "warn"}">${tool.available ? "available" : "missing"}</span>
+              <span class="pill ${statusClass}">${statusLabel}</span>
             </div>
             <p>${escapeHtml(tool.resolved_path || tool.configured_path || "Not configured")}</p>
           </article>
-        `
+        `;
+        }
       )
       .join("")}
   `;

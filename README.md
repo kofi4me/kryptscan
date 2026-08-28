@@ -108,7 +108,7 @@ docker compose -f docker-compose.scanner.yml build
 docker compose -f docker-compose.scanner.yml up -d
 ```
 
-The scanner worker includes Nuclei, Nmap, OWASP ZAP baseline, Nikto, SSLyze, testssl.sh, Amass, Subfinder, Trivy, httpx, Naabu, dnsx, Katana, wafw00f, WhatWeb, Semgrep, Gitleaks, Grype, Checkov, Prowler, and ScoutSuite. Set `SCANNER_BACKEND=kryptnet_toolkit` so KryptNet runs both Vulnerability Assessment and Ethical Pen-Testing through the bundled tools. Use the Scanner Health dashboard after deployment to confirm readiness.
+The scanner worker includes Nuclei, Nmap, OWASP ZAP baseline, Nikto, SSLyze, testssl.sh, Amass, Subfinder, Trivy, httpx, Naabu, dnsx, Katana, wafw00f, WhatWeb, Semgrep, Gitleaks, Grype, Checkov, Prowler, and ScoutSuite. Set `SCANNER_BACKEND=worker` so KryptNet runs both Vulnerability Assessment and Ethical Pen-Testing through the bundled worker service. Use the Scanner Health dashboard after deployment to confirm readiness.
 
 For public deployment on `kryptscan.kryptnet.org`, use:
 

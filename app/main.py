@@ -526,6 +526,25 @@ def _update_scan_progress(scan_id: int, organization_id: int, percent: int, mess
         )
 
 
+def _staged_scan_progress(started: float, minimum_seconds: int, floor: int = 45, ceiling: int = 88) -> tuple[int, str]:
+    elapsed = max(0, time.monotonic() - started)
+    if minimum_seconds <= 0:
+        return floor, "Scanner worker is running the approved toolchain."
+    ratio = min(1.0, elapsed / minimum_seconds)
+    percent = min(ceiling, max(floor, floor + round((ceiling - floor) * ratio)))
+    stages = [
+        (0.18, "Running network discovery, port checks, and service fingerprinting."),
+        (0.36, "Reviewing web, TLS, HTTP, and exposed application signals."),
+        (0.54, "Correlating scanner evidence with known vulnerability patterns."),
+        (0.72, "Prioritizing exploitability, business danger, and remediation urgency."),
+        (1.0, "Completing AI-assisted triage and professional report preparation."),
+    ]
+    for limit, message in stages:
+        if ratio <= limit:
+            return percent, message
+    return percent, stages[-1][1]
+
+
 def _report_msp_details(user: Row) -> dict[str, str]:
     return {
         "MSP organization": user["organization_name"],
@@ -819,16 +838,11 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
         minimum_seconds = settings.scanner_min_full_scan_seconds if (scan["scan_tier"] or "full_scan") == "full_scan" else 0
         elapsed = time.monotonic() - job_started
         if minimum_seconds > 0 and elapsed < minimum_seconds:
-            _update_scan_progress(
-                scan_id,
-                user["organization_id"],
-                70,
-                (
-                    "Scanner evidence received. Holding the full assessment window for staged "
-                    "quality review, AI triage, and report preparation."
-                ),
-            )
-            time.sleep(round(minimum_seconds - elapsed))
+            while (time.monotonic() - job_started) < minimum_seconds:
+                percent, message = _staged_scan_progress(job_started, minimum_seconds, floor=70, ceiling=88)
+                _update_scan_progress(scan_id, user["organization_id"], percent, message)
+                remaining = minimum_seconds - (time.monotonic() - job_started)
+                time.sleep(max(1, min(20, round(remaining))))
         _update_scan_progress(scan_id, user["organization_id"], 90, "Scanner results received. Building professional report.")
         create_pdf = (scan["scan_tier"] or "full_scan") == "full_scan"
         _store_completed_scan(
@@ -874,6 +888,92 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
             {"scan_id": scan_id, "backend": scheduled.backend, "task_id": scheduled.external_task_id},
         )
 
+    minimum_seconds = settings.scanner_min_full_scan_seconds if (scan["scan_tier"] or "full_scan") == "full_scan" else 0
+    deadline = time.monotonic() + max(settings.scanner_worker_timeout_seconds, minimum_seconds + 120)
+    while time.monotonic() < deadline:
+        percent, message = _staged_scan_progress(job_started, minimum_seconds)
+        _update_scan_progress(scan_id, user["organization_id"], percent, message)
+        try:
+            refreshed = provider.refresh(
+                scan["normalized_target"],
+                scan["asset_type"],
+                scheduled.external_task_id,
+                scheduled.external_report_id,
+            )
+        except Exception as exc:
+            with get_connection() as connection:
+                connection.execute(
+                    """
+                    UPDATE scans
+                    SET status = 'failed',
+                        error_message = ?,
+                        progress_message = ?,
+                        refreshed_at = ?
+                    WHERE id = ? AND organization_id = ?
+                    """,
+                    (str(exc), f"Worker refresh failed: {str(exc)}", utcnow().isoformat(), scan_id, user["organization_id"]),
+                )
+                _audit(connection, user, "scan.failed", {"scan_id": scan_id, "error": str(exc)})
+            return
+
+        if refreshed.report is not None:
+            if minimum_seconds > 0:
+                while (time.monotonic() - job_started) < minimum_seconds:
+                    percent, message = _staged_scan_progress(job_started, minimum_seconds)
+                    _update_scan_progress(scan_id, user["organization_id"], percent, message)
+                    remaining = minimum_seconds - (time.monotonic() - job_started)
+                    time.sleep(max(1, min(20, round(remaining))))
+            _update_scan_progress(scan_id, user["organization_id"], 90, "Scanner results received. Building professional report.")
+            _store_completed_scan(
+                scan_id=scan_id,
+                user=user,
+                report=refreshed.report,
+                notify_user=False,
+                create_pdf=(scan["scan_tier"] or "full_scan") == "full_scan",
+                backend_name=scheduled.backend,
+            )
+            with get_connection() as connection:
+                _audit(connection, user, "scan.completed", {"scan_id": scan_id, "backend": scheduled.backend})
+            return
+
+        if refreshed.status == "failed":
+            with get_connection() as connection:
+                connection.execute(
+                    """
+                    UPDATE scans
+                    SET status = 'failed',
+                        error_message = ?,
+                        progress_message = ?,
+                        refreshed_at = ?
+                    WHERE id = ? AND organization_id = ?
+                    """,
+                    (refreshed.message, refreshed.message, utcnow().isoformat(), scan_id, user["organization_id"]),
+                )
+                _audit(connection, user, "scan.failed", {"scan_id": scan_id, "error": refreshed.message})
+            return
+
+        time.sleep(10)
+
+    with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE scans
+            SET status = 'failed',
+                error_message = ?,
+                progress_message = ?,
+                refreshed_at = ?
+            WHERE id = ? AND organization_id = ?
+            """,
+            (
+                "Scanner worker timed out before returning a completed report.",
+                "Scanner worker timed out before returning a completed report.",
+                utcnow().isoformat(),
+                scan_id,
+                user["organization_id"],
+            ),
+        )
+        _audit(connection, user, "scan.failed", {"scan_id": scan_id, "error": "worker timeout"})
+
 
 def get_current_user(request: Request) -> Row:
     token = request.cookies.get(settings.session_cookie_name)
@@ -912,7 +1012,7 @@ def health() -> dict:
     }
 
 
-def _tool_health(name: str, path_value: str, category: str) -> dict:
+def _tool_health(name: str, path_value: str, category: str, optional: bool = False) -> dict:
     resolved_path = shutil.which(path_value)
     return {
         "name": name,
@@ -920,6 +1020,7 @@ def _tool_health(name: str, path_value: str, category: str) -> dict:
         "configured_path": path_value,
         "available": bool(resolved_path),
         "resolved_path": resolved_path,
+        "optional": optional,
     }
 
 
@@ -996,6 +1097,7 @@ def scanner_health(user: Row = Depends(get_current_user)) -> dict:
             "configured_path": "python-gvm",
             "available": greenbone_is_available(),
             "resolved_path": "installed" if greenbone_is_available() else None,
+            "optional": True,
         },
         _tool_health("Nmap", settings.nmap_path, "Network and Services"),
         _tool_health("Naabu", settings.naabu_path, "Network and Services"),
@@ -1025,6 +1127,7 @@ def scanner_health(user: Row = Depends(get_current_user)) -> dict:
             "configured_path": "OPENAI_API_KEY",
             "available": bool(settings.openai_api_key),
             "resolved_path": "configured" if settings.openai_api_key else None,
+            "optional": False,
         }
     )
     tools.append(
@@ -1034,13 +1137,17 @@ def scanner_health(user: Row = Depends(get_current_user)) -> dict:
             "configured_path": "CLOUD_CHECKS_ENABLED",
             "available": settings.cloud_checks_enabled,
             "resolved_path": "enabled" if settings.cloud_checks_enabled else None,
+            "optional": True,
         }
     )
     tools, worker_connected = _merge_worker_tool_health(tools)
     available = sum(1 for tool in tools if tool["available"])
+    required_missing = sum(1 for tool in tools if not tool["available"] and not tool.get("optional"))
+    optional_pending = sum(1 for tool in tools if not tool["available"] and tool.get("optional"))
     return {
         "available": available,
-        "missing": len(tools) - available,
+        "missing": required_missing,
+        "optional_pending": optional_pending,
         "tools": tools,
         "backend": settings.scanner_backend,
         "worker_connected": worker_connected,

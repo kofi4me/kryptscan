@@ -32,7 +32,7 @@ class WorkerScannerProvider:
             "assessment_mode": assessment_mode,
             "scan_tier": scan_tier,
             "scan_protocols": scan_protocols or [],
-            "wait": True,
+            "wait": False,
         }
         request = urllib.request.Request(
             f"{self.settings.scanner_worker_url.rstrip('/')}/v1/scans",
@@ -73,10 +73,29 @@ class WorkerScannerProvider:
         task_id: str | None = None,
         report_id: str | None = None,
     ) -> RefreshedScan:
-        del task_id, report_id
-        scheduled = self.schedule(target, asset_type)
+        del target, asset_type, report_id
+        if not self.settings.scanner_worker_url or not self.settings.scanner_worker_token:
+            raise ValueError("SCANNER_WORKER_URL and SCANNER_WORKER_TOKEN must be configured.")
+        if not task_id:
+            return RefreshedScan(status="running", message="Scanner worker job is still being created.")
+
+        request = urllib.request.Request(
+            f"{self.settings.scanner_worker_url.rstrip('/')}/v1/scans/{task_id}",
+            headers={"Authorization": f"Bearer {self.settings.scanner_worker_token}"},
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")
+            raise ValueError(f"Scanner worker refresh failed: {detail}") from exc
+
+        report = None
+        if body.get("report"):
+            report = AssessmentReport.model_validate(body["report"])
         return RefreshedScan(
-            status=scheduled.status,
-            message=scheduled.message,
-            report=scheduled.report,
+            status=body.get("status", "running"),
+            message=body.get("message", "Scanner worker is running the approved toolchain."),
+            report=report,
         )
