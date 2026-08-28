@@ -811,7 +811,7 @@ function renderDashboard(payload) {
   selectAssessmentMode(state.assessmentMode);
   renderProfiles(payload.profiles || []);
   renderCommercialReadiness(payload);
-  renderMembers(payload.members || []);
+  renderMembers([]);
   renderPayments(payload.payments || []);
   renderAudit(payload.audit_events || []);
 

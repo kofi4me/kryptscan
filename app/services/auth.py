@@ -14,18 +14,67 @@ from app.security import (
 )
 
 
+PUBLIC_EMAIL_DOMAINS = {
+    "gmail.com",
+    "googlemail.com",
+    "outlook.com",
+    "hotmail.com",
+    "live.com",
+    "msn.com",
+    "yahoo.com",
+    "icloud.com",
+    "me.com",
+    "aol.com",
+    "proton.me",
+    "protonmail.com",
+}
+
+
+def _email_parts(email: str) -> tuple[str, str]:
+    normalized = email.strip().lower()
+    if "@" not in normalized or normalized.startswith("@") or normalized.endswith("@"):
+        raise ValueError("Valid email required.")
+    domain = normalized.split("@", 1)[1]
+    if "." not in domain:
+        raise ValueError("A valid email domain is required.")
+    return normalized, domain
+
+
+def _organization_identity(email: str) -> tuple[str, str]:
+    normalized, domain = _email_parts(email)
+    if domain in PUBLIC_EMAIL_DOMAINS:
+        return normalized, normalized
+    return domain, domain.replace(".", " ").title()
+
+
+def _ensure_organization(connection, email: str, company_name: str | None = None) -> Row:
+    organization_key, fallback_name = _organization_identity(email)
+    organization = connection.execute(
+        "SELECT * FROM organizations WHERE email_domain = ?",
+        (organization_key,),
+    ).fetchone()
+    if organization is None:
+        connection.execute(
+            """
+            INSERT INTO organizations (name, email_domain, account_type, created_at)
+            VALUES (?, ?, 'msp', ?)
+            """,
+            ((company_name or fallback_name).strip(), organization_key, utcnow().isoformat()),
+        )
+        organization = connection.execute(
+            "SELECT * FROM organizations WHERE email_domain = ?",
+            (organization_key,),
+        ).fetchone()
+    return organization
+
+
 class AuthService:
     def __init__(self, settings, email_sender: BaseEmailSender) -> None:
         self.settings = settings
         self.email_sender = email_sender
 
     def request_code(self, email: str) -> dict:
-        normalized = email.strip().lower()
-        if "@" not in normalized or normalized.startswith("@") or normalized.endswith("@"):
-            raise ValueError("Valid organizational email required.")
-        domain = normalized.split("@", 1)[1]
-        if "." not in domain:
-            raise ValueError("A business email domain is required.")
+        normalized, domain = _email_parts(email)
         code = generate_one_time_code()
         code_hash = hash_verification_code(self.settings.app_secret, normalized, code)
         created_at = utcnow()
@@ -33,23 +82,7 @@ class AuthService:
         expires_at = expires_at.timestamp() + 10 * 60
 
         with get_connection() as connection:
-            organization = connection.execute(
-                "SELECT * FROM organizations WHERE email_domain = ?",
-                (domain,),
-            ).fetchone()
-
-            if organization is None:
-                connection.execute(
-                    """
-                    INSERT INTO organizations (name, email_domain, account_type, created_at)
-                    VALUES (?, ?, 'msp', ?)
-                    """,
-                    (domain.replace(".", " ").title(), domain, created_at.isoformat()),
-                )
-                organization = connection.execute(
-                    "SELECT * FROM organizations WHERE email_domain = ?",
-                    (domain,),
-                ).fetchone()
+            organization = _ensure_organization(connection, normalized)
 
             user = connection.execute(
                 "SELECT * FROM users WHERE email = ?",
@@ -63,6 +96,11 @@ class AuthService:
                     VALUES (?, ?, ?, ?)
                     """,
                     (organization["id"], normalized, "owner", created_at.isoformat()),
+                )
+            elif user["organization_id"] != organization["id"]:
+                connection.execute(
+                    "UPDATE users SET organization_id = ? WHERE id = ?",
+                    (organization["id"], user["id"]),
                 )
 
             connection.execute(
@@ -83,38 +121,16 @@ class AuthService:
         }
 
     def register_account(self, payload) -> dict:
-        normalized = payload.email.strip().lower()
-        if "@" not in normalized or normalized.startswith("@") or normalized.endswith("@"):
-            raise ValueError("Valid email required.")
+        normalized, domain = _email_parts(payload.email)
         if not payload.data_protection_accepted:
             raise ValueError("Data protection agreement acceptance is required.")
         if not payload.safe_use_accepted:
             raise ValueError("Safe-use acceptance is required.")
         if not _strong_password(payload.password):
             raise ValueError("Password must be at least 12 characters and include uppercase, lowercase, number, and symbol.")
-
-        domain = normalized.split("@", 1)[1]
-        if "." not in domain:
-            raise ValueError("A valid email domain is required.")
-
         now = utcnow()
         with get_connection() as connection:
-            organization = connection.execute(
-                "SELECT * FROM organizations WHERE email_domain = ?",
-                (domain,),
-            ).fetchone()
-            if organization is None:
-                connection.execute(
-                    """
-                    INSERT INTO organizations (name, email_domain, account_type, created_at)
-                    VALUES (?, ?, 'msp', ?)
-                    """,
-                    (payload.company_name.strip(), domain, now.isoformat()),
-                )
-                organization = connection.execute(
-                    "SELECT * FROM organizations WHERE email_domain = ?",
-                    (domain,),
-                ).fetchone()
+            organization = _ensure_organization(connection, normalized, payload.company_name.strip())
 
             existing = connection.execute("SELECT * FROM users WHERE email = ?", (normalized,)).fetchone()
             if existing and existing["password_hash"]:
@@ -234,6 +250,12 @@ class AuthService:
             if not bool(user["is_verified"]):
                 self.request_code(normalized)
                 raise PermissionError("Email verification required. A new verification code has been sent.")
+            organization = _ensure_organization(connection, normalized, user["company_name"] or user["organization_name"])
+            if user["organization_id"] != organization["id"]:
+                connection.execute(
+                    "UPDATE users SET organization_id = ? WHERE id = ?",
+                    (organization["id"], user["id"]),
+                )
             connection.execute(
                 "UPDATE users SET failed_login_count = 0, locked_until = NULL, last_login_at = ? WHERE id = ?",
                 (now.isoformat(), user["id"]),
@@ -361,10 +383,11 @@ class AuthService:
                 UPDATE users
                 SET is_verified = 1,
                     verified_at = COALESCE(verified_at, ?),
-                    last_login_at = ?
+                    last_login_at = ?,
+                    organization_id = ?
                 WHERE email = ?
                 """,
-                (now.isoformat(), now.isoformat(), normalized),
+                (now.isoformat(), now.isoformat(), _ensure_organization(connection, normalized)["id"], normalized),
             )
 
             user = connection.execute(

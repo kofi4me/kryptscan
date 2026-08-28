@@ -465,9 +465,13 @@ def _summary_from_row(scan: Row) -> ScanSummary:
     )
 
 
-def _load_scan(connection, scan_id: int, organization_id: int) -> Row | None:
+def _load_scan(connection, scan_id: int, organization_id: int, requested_by: int | None = None) -> Row | None:
+    owner_clause = " AND scans.requested_by = ?" if requested_by is not None else ""
+    params = [scan_id, organization_id]
+    if requested_by is not None:
+        params.append(requested_by)
     return connection.execute(
-        """
+        f"""
         SELECT scans.*,
                targets.normalized_target,
                targets.asset_type,
@@ -479,10 +483,10 @@ def _load_scan(connection, scan_id: int, organization_id: int) -> Row | None:
         FROM scans
         JOIN targets ON targets.id = scans.target_id
         LEFT JOIN manual_findings ON manual_findings.scan_id = scans.id
-        WHERE scans.id = ? AND scans.organization_id = ?
+        WHERE scans.id = ? AND scans.organization_id = ?{owner_clause}
         GROUP BY scans.id
         """,
-        (scan_id, organization_id),
+        params,
     ).fetchone()
 
 
@@ -510,6 +514,57 @@ def _safe_report_file_path(path_value: str) -> str:
             detail="Only PDF report downloads are allowed.",
         )
     return str(candidate)
+
+
+def _purge_user_scan_history(user: Row) -> None:
+    report_paths: list[str] = []
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT id, report_pdf_path
+            FROM scans
+            WHERE organization_id = ?
+              AND requested_by = ?
+              AND status NOT IN ('queued', 'running')
+            """,
+            (user["organization_id"], user["id"]),
+        ).fetchall()
+        scan_ids = [int(row["id"]) for row in rows]
+        report_paths = [row["report_pdf_path"] for row in rows if row["report_pdf_path"]]
+        if scan_ids:
+            placeholders = ",".join("?" for _ in scan_ids)
+            connection.execute(
+                f"DELETE FROM manual_findings WHERE organization_id = ? AND scan_id IN ({placeholders})",
+                [user["organization_id"], *scan_ids],
+            )
+            connection.execute(
+                f"DELETE FROM scans WHERE organization_id = ? AND requested_by = ? AND id IN ({placeholders})",
+                [user["organization_id"], user["id"], *scan_ids],
+            )
+        connection.execute(
+            """
+            DELETE FROM targets
+            WHERE organization_id = ?
+              AND created_by = ?
+              AND id NOT IN (SELECT target_id FROM scans)
+            """,
+            (user["organization_id"], user["id"]),
+        )
+        connection.execute(
+            """
+            DELETE FROM engagements
+            WHERE organization_id = ?
+              AND created_by = ?
+              AND id NOT IN (SELECT engagement_id FROM scans WHERE engagement_id IS NOT NULL)
+            """,
+            (user["organization_id"], user["id"]),
+        )
+
+    for path_value in report_paths:
+        try:
+            Path(_safe_report_file_path(path_value)).unlink(missing_ok=True)
+        except (OSError, HTTPException):
+            continue
 
 
 def _update_scan_progress(scan_id: int, organization_id: int, percent: int, message: str) -> None:
@@ -726,7 +781,7 @@ def _store_completed_scan(
     backend_name: str | None = None,
 ) -> Row:
     with get_connection() as connection:
-        scan = _load_scan(connection, scan_id, user["organization_id"])
+        scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
         if scan is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
         if backend_name and scan["scanner_backend"] != backend_name:
@@ -734,7 +789,7 @@ def _store_completed_scan(
                 "UPDATE scans SET scanner_backend = ? WHERE id = ?",
                 (backend_name, scan_id),
             )
-            scan = _load_scan(connection, scan_id, user["organization_id"])
+            scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
 
         delivered_path = None
         emailed_at = None
@@ -775,7 +830,7 @@ def _store_completed_scan(
                 scan_id,
             ),
         )
-        return _load_scan(connection, scan_id, user["organization_id"])
+        return _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
 
 
 def _run_scan_job(scan_id: int, user_id: int) -> None:
@@ -785,7 +840,7 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
         return
 
     with get_connection() as connection:
-        scan = _load_scan(connection, scan_id, user["organization_id"])
+        scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
         if scan is None:
             return
         connection.execute(
@@ -801,7 +856,7 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
             (utcnow().isoformat(), utcnow().isoformat(), scan_id, user["organization_id"]),
         )
         _audit(connection, user, "scan.started", {"scan_id": scan_id, "backend": scan["scanner_backend"]})
-        scan = _load_scan(connection, scan_id, user["organization_id"])
+        scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
 
     _update_scan_progress(scan_id, user["organization_id"], 20, "Validating scope, scan profile, and scanner backend.")
     provider = get_scanner_provider(settings, scan["scanner_backend"])
@@ -1194,6 +1249,7 @@ def login(request: Request, payload: LoginRequest) -> Response:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     token = create_session_token(settings, int(user["id"]), user["email"])
+    _purge_user_scan_history(user)
     response = JSONResponse({"message": "Login successful.", "user": _serialize_user(user)})
     response.set_cookie(
         settings.session_cookie_name,
@@ -1221,6 +1277,7 @@ def confirm_password_reset(request: Request, payload: PasswordResetConfirmReques
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     token = create_session_token(settings, int(user["id"]), user["email"])
+    _purge_user_scan_history(user)
     response = JSONResponse({"message": "Password reset successful.", "user": _serialize_user(user)})
     response.set_cookie(
         settings.session_cookie_name,
@@ -1242,6 +1299,7 @@ def verify_code(request: Request, payload: AuthVerifyRequest) -> Response:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     token = create_session_token(settings, int(user["id"]), user["email"])
+    _purge_user_scan_history(user)
     response = JSONResponse({"message": "Authentication successful.", "user": _serialize_user(user)})
     response.set_cookie(
         settings.session_cookie_name,
@@ -1335,12 +1393,12 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
                 FROM scans
                 JOIN targets ON targets.id = scans.target_id
                 LEFT JOIN manual_findings ON manual_findings.scan_id = scans.id
-                WHERE scans.organization_id = ? AND scans.status = 'completed'
+                WHERE scans.organization_id = ? AND scans.requested_by = ? AND scans.status = 'completed'
                 GROUP BY scans.id
                 ORDER BY scans.id DESC
                 LIMIT 15
                 """,
-                (user["organization_id"],),
+                (user["organization_id"], user["id"]),
             ).fetchall()
             entitlement = _active_entitlement(connection, user["organization_id"])
             scan_summaries = [_summary_from_row(scan) for scan in scans]
@@ -1372,23 +1430,23 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
             FROM scans
             JOIN targets ON targets.id = scans.target_id
             LEFT JOIN manual_findings ON manual_findings.scan_id = scans.id
-            WHERE scans.organization_id = ?
+            WHERE scans.organization_id = ? AND scans.requested_by = ?
             GROUP BY scans.id
             ORDER BY scans.id DESC
             LIMIT 15
             """,
-            (user["organization_id"],),
+            (user["organization_id"], user["id"]),
         ).fetchall()
 
         engagements = connection.execute(
             """
             SELECT *
             FROM engagements
-            WHERE organization_id = ?
+            WHERE organization_id = ? AND created_by = ?
             ORDER BY id DESC
             LIMIT 20
             """,
-            (user["organization_id"],),
+            (user["organization_id"], user["id"]),
         ).fetchall()
 
         manual_findings = connection.execute(
@@ -1396,48 +1454,38 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
             SELECT manual_findings.*
             FROM manual_findings
             JOIN scans ON scans.id = manual_findings.scan_id
-            WHERE manual_findings.organization_id = ?
+            WHERE manual_findings.organization_id = ? AND manual_findings.created_by = ?
             ORDER BY manual_findings.id DESC
             LIMIT 30
             """,
-            (user["organization_id"],),
+            (user["organization_id"], user["id"]),
         ).fetchall()
 
         audit_events = connection.execute(
             """
             SELECT *
             FROM audit_events
-            WHERE organization_id = ?
+            WHERE organization_id = ? AND actor_id = ?
             ORDER BY id DESC
             LIMIT 20
             """,
-            (user["organization_id"],),
-        ).fetchall()
-
-        members = connection.execute(
-            """
-            SELECT *
-            FROM users
-            WHERE organization_id = ?
-            ORDER BY id
-            """,
-            (user["organization_id"],),
+            (user["organization_id"], user["id"]),
         ).fetchall()
 
         payments = connection.execute(
             """
             SELECT *
             FROM payments
-            WHERE organization_id = ?
+            WHERE organization_id = ? AND created_by = ?
             ORDER BY id DESC
             LIMIT 10
             """,
-            (user["organization_id"],),
+            (user["organization_id"], user["id"]),
         ).fetchall()
 
         target_count = connection.execute(
-            "SELECT COUNT(*) AS count FROM targets WHERE organization_id = ?",
-            (user["organization_id"],),
+            "SELECT COUNT(*) AS count FROM targets WHERE organization_id = ? AND created_by = ?",
+            (user["organization_id"], user["id"]),
         ).fetchone()["count"]
         entitlement = _active_entitlement(connection, user["organization_id"])
 
@@ -1467,7 +1515,7 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
         toolchain=get_ethical_pentest_toolchain(),
         profiles=get_assessment_profiles(),
         engagements=[_serialize_engagement(row) for row in engagements],
-        members=[_serialize_member(row) for row in members],
+        members=[],
         payments=[_serialize_payment(row) for row in payments],
         manual_findings=[_serialize_manual_finding(row) for row in manual_findings],
         audit_events=[_serialize_audit_event(row) for row in audit_events],
@@ -1746,11 +1794,11 @@ def client_portal(user: Row = Depends(get_current_user)) -> ClientPortalResponse
             SELECT scans.*, targets.normalized_target, targets.asset_type, targets.target
             FROM scans
             JOIN targets ON targets.id = scans.target_id
-            WHERE scans.organization_id = ? AND scans.status = 'completed'
+            WHERE scans.organization_id = ? AND scans.requested_by = ? AND scans.status = 'completed'
             ORDER BY scans.completed_at DESC
             LIMIT 20
             """,
-            (user["organization_id"],),
+            (user["organization_id"], user["id"]),
         ).fetchall()
 
     reports = []
@@ -2162,7 +2210,7 @@ def create_scan(
         )
         scan_id = cursor.lastrowid
 
-        scan = _load_scan(connection, scan_id, user["organization_id"])
+        scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
         _audit(
             connection,
             user,
@@ -2195,7 +2243,7 @@ def add_manual_finding(
 
     now = utcnow().isoformat()
     with get_connection() as connection:
-        scan = _load_scan(connection, scan_id, user["organization_id"])
+        scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
         if scan is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
         cursor = connection.execute(
@@ -2249,7 +2297,7 @@ def regenerate_report(
 
 def _regenerate_completed_report(scan_id: int, user: Row, *, notify_user: bool) -> Row:
     with get_connection() as connection:
-        scan = _load_scan(connection, scan_id, user["organization_id"])
+        scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
         if scan is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
         report = _get_report_for_scan(scan)
@@ -2275,7 +2323,7 @@ def refresh_scan(
     _rate_limit(request, "scans.refresh", limit=20, window_seconds=60)
     _require_owner_or_analyst(user)
     with get_connection() as connection:
-        scan = _load_scan(connection, scan_id, user["organization_id"])
+        scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
         if scan is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
 
@@ -2297,7 +2345,7 @@ def refresh_scan(
                     "UPDATE scans SET status = 'failed', error_message = ?, progress_message = ?, refreshed_at = ? WHERE id = ?",
                     (str(exc), f"Worker refresh failed: {str(exc)}", utcnow().isoformat(), scan_id),
                 )
-                scan = _load_scan(connection, scan_id, user["organization_id"])
+                scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
             return _summary_from_row(scan)
     else:
         provider = get_scanner_provider(settings, scan["scanner_backend"])
@@ -2314,7 +2362,7 @@ def refresh_scan(
                     "UPDATE scans SET status = 'failed', error_message = ?, refreshed_at = ? WHERE id = ?",
                     (str(exc), utcnow().isoformat(), scan_id),
                 )
-                scan = _load_scan(connection, scan_id, user["organization_id"])
+                scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
             return _summary_from_row(scan)
 
     if refreshed.report is not None:
@@ -2332,7 +2380,7 @@ def refresh_scan(
                 "UPDATE scans SET status = ?, progress_message = ?, refreshed_at = ? WHERE id = ?",
                 (refreshed.status, refreshed.message, utcnow().isoformat(), scan_id),
             )
-            scan = _load_scan(connection, scan_id, user["organization_id"])
+            scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
 
     return _summary_from_row(scan)
 
@@ -2340,7 +2388,7 @@ def refresh_scan(
 @app.get("/api/reports/{scan_id}")
 def get_report(scan_id: int, user: Row = Depends(get_current_user)) -> dict:
     with get_connection() as connection:
-        scan = _load_scan(connection, scan_id, user["organization_id"])
+        scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
         if scan is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
 
@@ -2360,7 +2408,7 @@ def get_report(scan_id: int, user: Row = Depends(get_current_user)) -> dict:
 @app.get("/api/reports/{scan_id}/pdf")
 def download_report_pdf(scan_id: int, user: Row = Depends(get_current_user)) -> FileResponse:
     with get_connection() as connection:
-        scan = _load_scan(connection, scan_id, user["organization_id"])
+        scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
         if scan is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
 
@@ -2390,7 +2438,7 @@ def email_report_pdf(
     _rate_limit(request, "reports.email", limit=6, window_seconds=60)
     _require_owner_or_analyst(user)
     with get_connection() as connection:
-        scan = _load_scan(connection, scan_id, user["organization_id"])
+        scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
         if scan is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
         if (scan["scan_tier"] or "full_scan") == "free_preview":
