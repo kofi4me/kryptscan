@@ -14,6 +14,15 @@ class WorkerScannerProvider:
     def __init__(self, settings) -> None:
         self.settings = settings
 
+    def _worker_error(self, exc: urllib.error.HTTPError, action: str) -> ValueError:
+        detail = exc.read().decode("utf-8", "replace")
+        if exc.code in {401, 403}:
+            return ValueError(
+                "Scanner worker authentication failed. Set the same SCANNER_WORKER_TOKEN in "
+                ".env and .env.scanner, then restart kryptnet-scan and the scanner worker."
+            )
+        return ValueError(f"Scanner worker {action} failed: {detail}")
+
     def schedule(
         self,
         target: str,
@@ -47,8 +56,7 @@ class WorkerScannerProvider:
             with urllib.request.urlopen(request, timeout=self.settings.scanner_worker_timeout_seconds) as response:
                 body = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", "replace")
-            raise ValueError(f"Scanner worker rejected the job: {detail}") from exc
+            raise self._worker_error(exc, "job submission") from exc
 
         if body.get("status") != "completed" or not body.get("report"):
             return ScheduledScan(
@@ -88,8 +96,7 @@ class WorkerScannerProvider:
             with urllib.request.urlopen(request, timeout=30) as response:
                 body = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", "replace")
-            raise ValueError(f"Scanner worker refresh failed: {detail}") from exc
+            raise self._worker_error(exc, "refresh") from exc
 
         report = None
         if body.get("report"):

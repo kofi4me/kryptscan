@@ -1137,11 +1137,13 @@ def _merge_worker_tool_health(tools: list[dict]) -> tuple[list[dict], bool]:
     for tool in tools:
         worker_key = aliases.get(tool["name"])
         if worker_key and worker_key in worker_tools:
+            worker_available = worker_tools[worker_key]
+            combined_available = bool(tool.get("available")) or worker_available
             tool = {
                 **tool,
-                "available": worker_tools[worker_key],
-                "resolved_path": "scanner worker" if worker_tools[worker_key] else tool.get("resolved_path"),
-                "source": "worker",
+                "available": combined_available,
+                "resolved_path": "scanner worker" if worker_available else tool.get("resolved_path"),
+                "source": "worker" if worker_available else tool.get("source"),
             }
         merged.append(tool)
     return merged, True
@@ -1422,6 +1424,7 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
                     "active_scans": 0,
                     "latest_risk_score": scan_summaries[0].risk_score if scan_summaries else None,
                     "latest_severity_counts": scan_summaries[0].severity_counts if scan_summaries and scan_summaries[0].severity_counts else SeverityCounts(),
+                    "payment_required": settings.payment_required,
                 },
                 scans=scan_summaries,
             )
@@ -1507,6 +1510,7 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
             if latest_completed
             else SeverityCounts()
         ),
+        "payment_required": settings.payment_required,
     }
 
     return DashboardResponse(

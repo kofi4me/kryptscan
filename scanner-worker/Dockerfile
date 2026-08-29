@@ -61,7 +61,16 @@ RUN wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitle
 
 RUN wget -q https://sourceforge.net/projects/zap.mirror/files/v2.17.0/ZAP_2.17.0_Linux.tar.gz/download -O /tmp/zap.tgz \
     && tar -xzf /tmp/zap.tgz -C /opt \
-    && ln -s /opt/ZAP_2.17.0/zap-baseline.py /usr/local/bin/zap-baseline.py \
+    && printf '%s\n' '#!/bin/sh' \
+        'set -eu' \
+        'for candidate in /opt/ZAP_*/zap-baseline.py /zap/zap-baseline.py; do' \
+        '  if [ -f "$candidate" ]; then' \
+        '    exec python3 "$candidate" "$@"' \
+        '  fi' \
+        'done' \
+        'echo "OWASP ZAP baseline is not installed in this scanner image." >&2' \
+        'exit 127' > /usr/local/bin/zap-baseline.py \
+    && chmod +x /usr/local/bin/zap-baseline.py \
     && rm /tmp/zap.tgz
 
 WORKDIR /workspace

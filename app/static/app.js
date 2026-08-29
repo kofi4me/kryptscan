@@ -804,7 +804,8 @@ function renderDashboard(payload) {
     "dashboard-title"
   ).textContent = `${payload.organization.name} Security Command`;
   const clientOnly = payload.user?.role === "client_viewer";
-  document.getElementById("payment-panel").classList.toggle("hidden", payload.user?.role !== "owner");
+  const paymentRequired = Boolean(payload.stats?.payment_required);
+  document.getElementById("payment-panel").classList.toggle("hidden", payload.user?.role !== "owner" || !paymentRequired);
   document.getElementById("scan-form").classList.toggle("hidden", clientOnly);
   document.getElementById("manual-finding-form").classList.toggle("hidden", clientOnly || !state.activeScanId);
   document.getElementById("client-portal-panel").classList.toggle("hidden", !clientOnly);
@@ -1006,6 +1007,10 @@ function renderClientPortal(payload) {
 function renderCommercialReadiness(payload) {
   const element = document.getElementById("commercial-readiness");
   if (!element || !payload) return;
+  if (!payload.stats?.payment_required) {
+    element.innerHTML = "";
+    return;
+  }
   const paymentActive = payload.entitlement?.status === "active";
   element.innerHTML = `
     <article class="readiness-card">

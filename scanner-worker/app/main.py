@@ -82,9 +82,26 @@ def _validate_target(target: str) -> str:
     return host
 
 
+def _zap_baseline_path() -> str | None:
+    path = shutil.which("zap-baseline.py")
+    if path:
+        return path
+    for candidate in Path("/opt").glob("ZAP_*/zap-baseline.py"):
+        if candidate.exists():
+            return str(candidate)
+    fallback = Path("/zap/zap-baseline.py")
+    if fallback.exists():
+        return str(fallback)
+    return None
+
+
 def _run(command: list[str], output_dir: Path, timeout: int = MAX_TOOL_TIMEOUT) -> tuple[bool, str]:
     tool = command[0]
-    if not shutil.which(tool):
+    if tool == "zap-baseline.py" and not shutil.which(tool):
+        zap_path = _zap_baseline_path()
+        if zap_path:
+            command = [zap_path, *command[1:]]
+    if not shutil.which(command[0]) and not Path(command[0]).exists():
         return False, f"{tool} is not installed in the scanner worker image."
     try:
         result = subprocess.run(
@@ -456,6 +473,7 @@ def health() -> dict:
     except Exception:
         python_gvm_available = False
     available_tools = {tool: bool(shutil.which(tool)) for tool in tools}
+    available_tools["zap-baseline.py"] = bool(_zap_baseline_path())
     scoutsuite_available = bool(shutil.which("ScoutSuite") or shutil.which("scoutsuite") or shutil.which("scout"))
     available_tools["ScoutSuite"] = scoutsuite_available
     available_tools["scoutsuite"] = scoutsuite_available
