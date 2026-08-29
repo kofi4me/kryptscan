@@ -641,11 +641,15 @@ async function handleCreateScan(event) {
       `${formatMode(payload.assessment_mode)} created for ${payload.target}. Current status: ${payload.status}.${deliveryNote}`,
       "success"
     );
-    document.getElementById("scan-form").reset();
-    state.reportIntakeEnabled = false;
+    state.activeScanId = payload.id;
     selectAssessmentMode(state.assessmentMode);
     selectScanTier("full_scan", { silent: true });
-    await loadDashboard(true);
+    await loadDashboard(false);
+    setStatus(
+      "dashboard-status",
+      `${formatMode(payload.assessment_mode)} created for ${payload.target}. Current status: ${payload.status}.${deliveryNote}`,
+      "success"
+    );
     if (payload.status === "completed") {
       await loadReport(payload.id);
     }

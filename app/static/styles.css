@@ -1242,26 +1242,28 @@ textarea {
   margin-top: 1rem;
   padding: 0.95rem 1rem;
   border-radius: 18px;
-  border: 1px solid transparent;
+  border: 1px solid rgba(148, 163, 184, 0.24);
   line-height: 1.55;
+  font-weight: 800;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
 }
 
 .status-card.success {
-  background: rgba(42, 181, 127, 0.18);
-  border-color: rgba(42, 181, 127, 0.32);
-  color: #0f5c40;
+  background: linear-gradient(135deg, #06281d, #0f5c40);
+  border-color: rgba(45, 212, 191, 0.55);
+  color: #ecfff8;
 }
 
 .status-card.error {
-  background: rgba(217, 75, 55, 0.18);
-  border-color: rgba(255, 126, 104, 0.34);
-  color: #8f2d20;
+  background: linear-gradient(135deg, #3b0b0b, #991b1b);
+  border-color: rgba(248, 113, 113, 0.65);
+  color: #fff5f5;
 }
 
 .status-card.neutral {
-  background: rgba(47, 99, 255, 0.14);
-  border-color: rgba(47, 99, 255, 0.24);
-  color: #173fbe;
+  background: linear-gradient(135deg, #05070c, #172033 55%, #3b1111);
+  border-color: rgba(239, 68, 68, 0.48);
+  color: #ffffff;
 }
 
 .ops-rail {
@@ -1464,18 +1466,25 @@ textarea {
 }
 
 .scan-progress .bar-track {
-  height: 16px;
-  background: #16243a;
-  border: 1px solid rgba(115, 204, 255, 0.28);
-  box-shadow: inset 0 1px 6px rgba(0, 0, 0, 0.36);
+  height: 18px;
+  background: #05070c;
+  border: 1px solid rgba(239, 68, 68, 0.55);
+  box-shadow:
+    inset 0 1px 8px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(15, 23, 42, 0.35);
 }
 
 .scan-progress .bar-fill {
-  min-width: 12px;
-  background: linear-gradient(90deg, #2f63ff 0%, #73ccff 34%, #efb53d 66%, #ff7a45 100%);
+  min-width: 18px;
+  background: linear-gradient(90deg, #111827 0%, #ef4444 38%, #f97316 72%, #facc15 100%);
   box-shadow:
-    0 0 28px rgba(115, 204, 255, 0.58),
-    0 0 20px rgba(255, 122, 69, 0.42);
+    0 0 30px rgba(239, 68, 68, 0.62),
+    0 0 22px rgba(250, 204, 21, 0.48);
+}
+
+.scan-progress .meta-line {
+  color: #111827;
+  font-weight: 800;
 }
 
 .trend-chart svg {
