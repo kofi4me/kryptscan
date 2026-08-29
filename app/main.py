@@ -1058,6 +1058,12 @@ def index(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/kryptscan", response_class=HTMLResponse)
+@app.get("/kryptscan/", response_class=HTMLResponse)
+def kryptscan_index(request: Request) -> HTMLResponse:
+    return index(request)
+
+
 @app.get("/health")
 def health() -> dict:
     return {
