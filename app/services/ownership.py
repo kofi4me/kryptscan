@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from urllib.parse import urlparse
+
+
+DOMAIN_RE = re.compile(r"^(?=.{1,253}$)(?!-)[a-z0-9][a-z0-9-]{0,62}(\.[a-z0-9][a-z0-9-]{0,62})+$")
 
 
 def normalize_domain(domain: str) -> str:
@@ -10,12 +14,29 @@ def normalize_domain(domain: str) -> str:
 
 def _extract_host(target: str) -> str:
     candidate = target.strip().lower()
+    if not candidate or any(char.isspace() for char in candidate):
+        raise ValueError("Enter only one clean domain, URL, IP address, or CIDR range in the target field.")
+    if ":" in candidate and "://" not in candidate and not candidate.startswith("["):
+        raise ValueError(
+            "Put authorization reference, testing scope, testing window, and emergency contact in their own fields, not in the target field."
+        )
     if "://" in candidate:
         parsed = urlparse(candidate)
         if not parsed.hostname:
             raise ValueError("Unable to extract a hostname from that target.")
-        return parsed.hostname.lower()
-    return candidate.split("/", 1)[0].strip().lower()
+        candidate = parsed.hostname.lower()
+    else:
+        candidate = candidate.split("/", 1)[0].strip().lower()
+    if any(char in candidate for char in " /\\;&|`$()<>"):
+        raise ValueError("Target contains unsupported characters.")
+    try:
+        ipaddress.ip_network(candidate, strict=False)
+        return candidate
+    except ValueError:
+        pass
+    if not DOMAIN_RE.match(candidate.rstrip(".")):
+        raise ValueError("Use a valid domain, URL, IP address, or CIDR range.")
+    return candidate
 
 
 def infer_asset_type(target: str) -> str:

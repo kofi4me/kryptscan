@@ -68,8 +68,13 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
     average_weight = weighted_total / max(len(findings), 1)
     risk_score = min(100, round(average_weight * 11))
 
-    service_counter = Counter(item.service or "unknown" for item in findings)
-    category_counter = Counter(item.category for item in findings)
+    reportable_findings = [
+        item
+        for item in findings
+        if item.category not in {"Scanner Toolchain", "AI Reporting", "Assessment Quality"}
+    ]
+    service_counter = Counter(item.service or "unknown" for item in reportable_findings)
+    category_counter = Counter(item.category for item in reportable_findings)
 
     top_services = [
         ChartDatum(label=label, value=value)
@@ -121,7 +126,9 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
 
     remediation_plan: list[RemediationItem] = []
     seen_titles: set[str] = set()
-    for finding in findings:
+    for finding in reportable_findings or findings:
+        if finding.category in {"Scanner Toolchain", "AI Reporting", "Assessment Quality"}:
+            continue
         if finding.title in seen_titles:
             continue
         seen_titles.add(finding.title)

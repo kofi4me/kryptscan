@@ -4,6 +4,7 @@ import hashlib
 import ipaddress
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -53,6 +54,9 @@ def _auth(authorization: str | None) -> None:
         raise HTTPException(status_code=401, detail="Scanner worker token is invalid.")
 
 
+DOMAIN_RE = re.compile(r"^(?=.{1,253}$)(?!-)[a-z0-9][a-z0-9-]{0,62}(\.[a-z0-9][a-z0-9-]{0,62})+$")
+
+
 def _host(target: str) -> str:
     parsed = urlparse(target if "://" in target else f"https://{target}")
     return parsed.hostname or target
@@ -63,7 +67,18 @@ def _url(target: str) -> str:
 
 
 def _validate_target(target: str) -> str:
-    host = _host(target).strip().lower()
+    raw = target.strip()
+    if not raw or any(char.isspace() for char in raw):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid target. Enter only one clean domain, URL, IP address, or CIDR range in the target field.",
+        )
+    if ":" in raw and "://" not in raw and not re.match(r"^\[[0-9a-fA-F:]+\](:\d+)?$", raw):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid target. Put authorization reference, testing scope, and testing window in their own fields, not in the target field.",
+        )
+    host = _host(raw).strip().lower()
     if not host or any(char in host for char in " /\\;&|`$()<>"):
         raise HTTPException(status_code=400, detail="Invalid target.")
     try:
@@ -77,8 +92,16 @@ def _validate_target(target: str) -> str:
             for address in (network.network_address, network.broadcast_address)
         ):
             raise HTTPException(status_code=400, detail="Private, loopback, reserved, or link-local targets are blocked.")
+        return host
     except ValueError:
         pass
+    try:
+        ipaddress.ip_address(host)
+        return host
+    except ValueError:
+        pass
+    if not DOMAIN_RE.match(host.rstrip(".")):
+        raise HTTPException(status_code=400, detail="Invalid target. Use a valid domain, IP address, CIDR range, or URL.")
     return host
 
 
@@ -113,9 +136,30 @@ def _run(command: list[str], output_dir: Path, timeout: int = MAX_TOOL_TIMEOUT) 
             check=False,
         )
         output = "\n".join(part for part in [result.stdout, result.stderr] if part)
-        return result.returncode in {0, 1, 2}, output[:MAX_OUTPUT_CHARS]
+        return _tool_output_is_usable(tool, result.returncode, output), output[:MAX_OUTPUT_CHARS]
     except subprocess.TimeoutExpired:
         return False, f"{tool} timed out after {timeout} seconds."
+
+
+def _tool_output_is_usable(tool: str, returncode: int, output: str) -> bool:
+    lower = output.lower()
+    failure_markers = [
+        "usage:",
+        "unrecognized arguments",
+        "fatal error",
+        "failed to resolve",
+        "no targets were specified",
+        "connection refused",
+        "timed out after",
+        "is not installed",
+    ]
+    if any(marker in lower for marker in failure_markers):
+        return False
+    if tool in {"nuclei", "httpx", "naabu", "dnsx", "katana", "subfinder"}:
+        return returncode in {0, 1}
+    if tool in {"nikto", "testssl.sh", "zap-baseline.py"}:
+        return returncode in {0, 1, 2}
+    return returncode == 0
 
 
 def _finding(
@@ -141,20 +185,26 @@ def _finding(
     )
 
 
-def _tool_finding(target: str, tool: str, installed: bool, detail: str, category: str) -> Finding:
+def _tool_finding(target: str, tool: str, succeeded: bool, detail: str, category: str) -> Finding:
     return _finding(
         target,
-        f"{tool} {'completed' if installed else 'not available'}",
+        f"{tool} {'completed' if succeeded else 'incomplete'}",
         "info",
-        category if installed else "Scanner Toolchain",
+        category if succeeded else "Scanner Toolchain",
         tool.lower(),
         detail,
-        "Review raw output and parsed findings." if installed else f"Install {tool} in the scanner worker image before relying on this stage.",
+        "Review raw output and parsed findings." if succeeded else f"Repair or tune {tool} in the scanner worker image before relying on this stage.",
     )
 
 
 def _risk_indicator(target: str, tool: str, output: str, category: str) -> Finding | None:
     lower = output.lower()
+    if category == "Scanner Toolchain" or not output.strip():
+        return None
+    if not _tool_output_is_usable(tool.lower(), 0, output):
+        return None
+    if tool.lower() in {"trivy", "grype", "semgrep", "checkov", "gitleaks"}:
+        return None
     markers = ["vulnerab", "critical", "high", "weak", "outdated", "exposed", "misconfig", "cve-"]
     if not any(marker in lower for marker in markers):
         return None
@@ -279,7 +329,7 @@ def _tool_plan(target: str, payload: ScanRequest) -> list[tuple[str, list[str], 
     url = _url(target)
     checks = [
         ("Nmap", ["nmap", "-sV", "--top-ports", "100", "--version-light", host], "Network Exposure"),
-        ("SSLyze", ["sslyze", "--regular", host], "TLS Posture"),
+        ("SSLyze", ["sslyze", "--certinfo", "--tlsv1_2", "--tlsv1_3", "--heartbleed", "--robot", "--compression", f"{host}:443"], "TLS Posture"),
         ("testssl.sh", ["testssl.sh", "--warnings", "batch", url], "TLS Posture"),
         ("Nuclei", ["nuclei", "-target", url, "-severity", "critical,high,medium,low", "-silent"], "Known Vulnerabilities"),
     ]
@@ -289,6 +339,7 @@ def _tool_plan(target: str, payload: ScanRequest) -> list[tuple[str, list[str], 
                 ("WhatWeb", ["whatweb", "--no-errors", url], "Technology Fingerprinting"),
                 ("wafw00f", ["wafw00f", url], "Web Protection"),
                 ("Nikto", ["nikto", "-host", url, "-nointeractive"], "Web Server Security"),
+                ("OWASP ZAP baseline", ["zap-baseline.py", "-t", url, "-m", "5"], "Web and API"),
             ]
         )
     if payload.assessment_mode == "ethical_pentesting":
@@ -302,15 +353,16 @@ def _tool_plan(target: str, payload: ScanRequest) -> list[tuple[str, list[str], 
                 ("Amass", ["amass", "enum", "-passive", "-d", host], "Authorized Reconnaissance"),
             ]
         )
-    checks.extend(
-        [
-            ("Trivy", ["trivy", "config", "--format", "json", "/workspace"], "Container, Cloud, and IaC"),
-            ("Semgrep", ["semgrep", "scan", "--config", "auto", "--json", "/workspace"], "Code Security"),
-            ("Gitleaks", ["gitleaks", "detect", "--source", "/workspace", "--no-banner"], "Secrets Exposure"),
-            ("Grype", ["grype", "dir:/workspace", "-o", "json"], "Software Composition"),
-            ("Checkov", ["checkov", "-d", "/workspace", "-o", "json", "--quiet"], "Infrastructure as Code"),
-        ]
-    )
+    if payload.asset_type in {"code", "container", "cloud", "iac", "repository"}:
+        checks.extend(
+            [
+                ("Trivy", ["trivy", "config", "--format", "json", "/workspace"], "Container, Cloud, and IaC"),
+                ("Semgrep", ["semgrep", "scan", "--config", "auto", "--json", "/workspace"], "Code Security"),
+                ("Gitleaks", ["gitleaks", "detect", "--source", "/workspace", "--no-banner"], "Secrets Exposure"),
+                ("Grype", ["grype", "dir:/workspace", "-o", "json"], "Software Composition"),
+                ("Checkov", ["checkov", "-d", "/workspace", "-o", "json", "--quiet"], "Infrastructure as Code"),
+            ]
+        )
     return checks
 
 
