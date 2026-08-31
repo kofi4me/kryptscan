@@ -45,6 +45,7 @@ class ScanRequest(BaseModel):
     assessment_mode: str = "vulnerability_assessment"
     scan_tier: str = "full_scan"
     scan_protocols: list[str] = Field(default_factory=list)
+    testing_context: dict[str, object] = Field(default_factory=dict)
     wait: bool = True
 
 
@@ -562,6 +563,94 @@ def _extract_openai_text(payload: dict) -> str:
     return "\n".join(parts)
 
 
+def _context_text(payload: ScanRequest, key: str) -> str:
+    value = payload.testing_context.get(key, "")
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _context_flag(payload: ScanRequest, key: str) -> bool:
+    value = payload.testing_context.get(key, False)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() in {"1", "true", "yes", "on"}
+    return False
+
+
+def _pentest_context_findings(target: str, payload: ScanRequest) -> list[Finding]:
+    if payload.assessment_mode != "ethical_pentesting":
+        return []
+    findings: list[Finding] = [
+        _finding(
+            target,
+            "Ethical pen-testing rules of engagement enforced",
+            "info",
+            "Rules of Engagement",
+            "kryptscan-roe",
+            "This assessment is constrained to authorized, non-destructive validation. Brute force, persistence, destructive exploitation, and data exfiltration are outside the automated test profile.",
+            "Keep written authorization, target scope, test window, and emergency stop instructions attached to the engagement record before client delivery.",
+        )
+    ]
+    api_base_url = _context_text(payload, "api_base_url")
+    if api_base_url:
+        findings.append(
+            _finding(
+                target,
+                "API testing scope included",
+                "info",
+                "API Security",
+                "kryptscan-roe",
+                f"The engagement includes API surface review for {api_base_url}. KryptScan adds HTTP probing, crawling, and known-vulnerability checks against this approved API URL where reachable.",
+                "Confirm API documentation, authentication requirements, rate limits, and sensitive endpoints before manual validation.",
+            )
+        )
+    if _context_flag(payload, "authenticated_testing_allowed"):
+        account = _context_text(payload, "test_account_username") or "client-approved test account"
+        role = _context_text(payload, "test_account_role")
+        role_text = f" with role {role}" if role else ""
+        findings.append(
+            _finding(
+                target,
+                "Authenticated testing approved",
+                "info",
+                "Identity and Access",
+                "kryptscan-roe",
+                f"Rules of engagement allow authenticated validation using {account}{role_text}. KryptScan stores only the account identifier and role, not passwords, tokens, or secrets.",
+                "Use a secure credential handoff channel and confirm that test accounts have only the permissions approved for the engagement.",
+            )
+        )
+    for key, title, category, remediation in [
+        (
+            "access_notes",
+            "Access constraints recorded",
+            "Rules of Engagement",
+            "Follow the recorded access limits during manual testing and pause if access controls differ from the approved scope.",
+        ),
+        (
+            "out_of_scope",
+            "Out-of-scope boundaries recorded",
+            "Rules of Engagement",
+            "Do not test excluded systems, paths, accounts, or actions without updated written approval.",
+        ),
+        (
+            "critical_workflows",
+            "Business-critical workflows identified",
+            "Business Logic",
+            "Manually validate these workflows for authorization flaws, abuse paths, and data exposure using non-destructive test cases.",
+        ),
+        (
+            "emergency_stop",
+            "Emergency stop instructions recorded",
+            "Rules of Engagement",
+            "Keep this contact path visible to the tester and stop scanning immediately if service health degrades.",
+        ),
+    ]:
+        value = _context_text(payload, key)
+        if value:
+            findings.append(_finding(target, title, "info", category, "kryptscan-roe", value, remediation))
+    return findings
+
+
 def _tool_plan(target: str, payload: ScanRequest) -> list[tuple[str, list[str], str]]:
     host = _validate_target(target)
     url = _url(target)
@@ -591,6 +680,17 @@ def _tool_plan(target: str, payload: ScanRequest) -> list[tuple[str, list[str], 
                 ("Amass", ["amass", "enum", "-passive", "-d", host], "Authorized Reconnaissance"),
             ]
         )
+        api_base_url = _context_text(payload, "api_base_url")
+        if api_base_url:
+            _validate_target(api_base_url)
+            api_url = _url(api_base_url)
+            checks.extend(
+                [
+                    ("httpx", ["httpx", "-u", api_url, "-title", "-tech-detect", "-status-code", "-silent"], "API Security"),
+                    ("Katana", ["katana", "-u", api_url, "-silent", "-d", "2"], "API Crawling"),
+                    ("Nuclei", ["nuclei", "-target", api_url, "-severity", "critical,high,medium,low", "-silent"], "API Known Vulnerabilities"),
+                ]
+            )
     if payload.asset_type in {"code", "container", "cloud", "iac", "repository"}:
         checks.extend(
             [
@@ -620,6 +720,7 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
     findings: list[Finding] = []
     stage_results: list[str] = []
     plan = list(_tool_plan(target, payload))
+    findings.extend(_pentest_context_findings(target, payload))
     _set_job_status(
         job_id,
         status="running",
@@ -687,10 +788,23 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
     )
     report = build_assessment_report(target, findings)
     mode_label = "Ethical Pen-Testing" if payload.assessment_mode == "ethical_pentesting" else "Vulnerability Assessment"
+    pen_test_protocols = []
+    if payload.assessment_mode == "ethical_pentesting":
+        pen_test_protocols = [
+            "Ethical pen-test ROE context attached to scanner job",
+            "External attack surface, DNS, web, API, TLS, WAF, crawling, and known-vulnerability checks attempted",
+            "Authenticated testing context documented without storing credentials or secrets",
+            "Manual exploit validation remains controlled, non-destructive, and evidence-driven",
+        ]
+        if _context_text(payload, "api_base_url"):
+            pen_test_protocols.append("API base URL included in HTTP probing, crawling, and template checks")
+        if _context_text(payload, "critical_workflows"):
+            pen_test_protocols.append("Business-critical workflow review queued for analyst validation")
     report = report.model_copy(
         update={
             "scan_protocols": [
                 *payload.scan_protocols,
+                *pen_test_protocols,
                 "Scanner worker executed the containerized safe tool profile",
                 *stage_results,
                 "Private/reserved target policy enforced before tool execution",

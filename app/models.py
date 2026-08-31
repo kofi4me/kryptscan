@@ -77,6 +77,14 @@ class ScanCreateRequest(BaseModel):
     vulnerability_focus: list[str] = Field(default_factory=list)
     known_vulnerabilities: str | None = Field(default=None, max_length=1000)
     validation_mode: str = Field(default="safe_validation")
+    api_base_url: str | None = Field(default=None, max_length=255)
+    authenticated_testing_allowed: bool = False
+    test_account_username: str | None = Field(default=None, max_length=200)
+    test_account_role: str | None = Field(default=None, max_length=120)
+    access_notes: str | None = Field(default=None, max_length=1000)
+    out_of_scope: str | None = Field(default=None, max_length=1000)
+    critical_workflows: str | None = Field(default=None, max_length=1000)
+    emergency_stop: str | None = Field(default=None, max_length=500)
 
 
 class EngagementCreateRequest(BaseModel):

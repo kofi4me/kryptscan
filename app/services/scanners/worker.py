@@ -31,6 +31,7 @@ class WorkerScannerProvider:
         assessment_mode: str = "vulnerability_assessment",
         scan_tier: str = "full_scan",
         scan_protocols: list[str] | None = None,
+        testing_context: dict | None = None,
     ) -> ScheduledScan:
         if not self.settings.scanner_worker_url or not self.settings.scanner_worker_token:
             raise ValueError("SCANNER_WORKER_URL and SCANNER_WORKER_TOKEN must be configured.")
@@ -41,6 +42,7 @@ class WorkerScannerProvider:
             "assessment_mode": assessment_mode,
             "scan_tier": scan_tier,
             "scan_protocols": scan_protocols or [],
+            "testing_context": testing_context or {},
             "wait": False,
         }
         request = urllib.request.Request(

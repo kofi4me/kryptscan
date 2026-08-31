@@ -443,6 +443,55 @@
                   placeholder="Optional: CVE IDs, suspected weaknesses, exposed services, affected app paths, or previous scan findings"
                 ></textarea>
               </label>
+              <div class="form-grid">
+                <label>
+                  <span>API base URL</span>
+                  <input id="api-base-url-input" type="url" placeholder="https://api.example.com" />
+                </label>
+                <label>
+                  <span>Test account username</span>
+                  <input id="test-account-username-input" type="text" placeholder="tester@example.com or client-approved user ID" />
+                </label>
+              </div>
+              <div class="form-grid">
+                <label>
+                  <span>Test account role</span>
+                  <input id="test-account-role-input" type="text" placeholder="Customer, staff, analyst, admin-readonly" />
+                </label>
+                <label class="check-option target-authorization-check compact-check">
+                  <input id="authenticated-testing-input" type="checkbox" />
+                  <span>Authenticated testing is approved in the rules of engagement.</span>
+                </label>
+              </div>
+              <p class="inline-copy no-secret-note">Do not enter passwords, API keys, tokens, or client secrets. Store credentials in an approved secure channel only.</p>
+              <label>
+                <span>Access notes</span>
+                <textarea
+                  id="access-notes-input"
+                  placeholder="Optional: login path, MFA constraints, VPN requirement, role limitations, or safe account handling instructions"
+                ></textarea>
+              </label>
+              <label>
+                <span>Out-of-scope systems or actions</span>
+                <textarea
+                  id="out-of-scope-input"
+                  placeholder="Optional: excluded hosts, no-go paths, no destructive testing, rate limits, or restricted business hours"
+                ></textarea>
+              </label>
+              <label>
+                <span>Business-critical workflows</span>
+                <textarea
+                  id="critical-workflows-input"
+                  placeholder="Optional: login, checkout, payment, customer portal, admin approval, file upload, password reset"
+                ></textarea>
+              </label>
+              <label>
+                <span>Emergency stop instructions</span>
+                <textarea
+                  id="emergency-stop-input"
+                  placeholder="Optional: who to contact and what to do if testing impacts availability or business operations"
+                ></textarea>
+              </label>
             </div>
           </form>
 

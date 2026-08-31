@@ -608,6 +608,14 @@ async function handleCreateScan(event) {
       .map((item) => item.trim())
       .filter(Boolean);
     body.known_vulnerabilities = document.getElementById("known-vulnerabilities-input").value.trim() || null;
+    body.api_base_url = document.getElementById("api-base-url-input").value.trim() || null;
+    body.authenticated_testing_allowed = document.getElementById("authenticated-testing-input").checked;
+    body.test_account_username = document.getElementById("test-account-username-input").value.trim() || null;
+    body.test_account_role = document.getElementById("test-account-role-input").value.trim() || null;
+    body.access_notes = document.getElementById("access-notes-input").value.trim() || null;
+    body.out_of_scope = document.getElementById("out-of-scope-input").value.trim() || null;
+    body.critical_workflows = document.getElementById("critical-workflows-input").value.trim() || null;
+    body.emergency_stop = document.getElementById("emergency-stop-input").value.trim() || null;
   }
 
   try {

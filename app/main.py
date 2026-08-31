@@ -660,6 +660,12 @@ def _enrich_report_for_scan(
         else report.scope_summary
     )
     methodology = list(report.methodology)
+    testing_context = {}
+    if scan["scanner_context_json"]:
+        try:
+            testing_context = json.loads(scan["scanner_context_json"] or "{}")
+        except json.JSONDecodeError:
+            testing_context = {}
     if mode == "ethical_pentesting":
         methodology = [
             "Engagement intake and rules-of-engagement confirmation",
@@ -667,9 +673,21 @@ def _enrich_report_for_scan(
             *methodology,
             "Manual tester evidence review and client-ready remediation mapping",
         ]
+        if testing_context.get("api_base_url"):
+            methodology.append(f"API endpoint testing included for {testing_context['api_base_url']}.")
+        if testing_context.get("authenticated_testing_allowed"):
+            methodology.append("Authenticated testing was approved, using only client-approved test account context.")
+        if testing_context.get("critical_workflows"):
+            methodology.append(f"Business workflow review focus: {testing_context['critical_workflows']}.")
     limitations = list(report.limitations)
     if engagement:
         limitations.append(f"Emergency contact on record: {engagement['emergency_contact']}.")
+    if mode == "ethical_pentesting":
+        if testing_context.get("out_of_scope"):
+            limitations.append(f"Out-of-scope boundaries recorded in the rules of engagement: {testing_context['out_of_scope']}.")
+        if testing_context.get("emergency_stop"):
+            limitations.append(f"Emergency stop instruction: {testing_context['emergency_stop']}.")
+        limitations.append("KryptScan ethical pen-testing avoids destructive exploitation, brute force, persistence, and data exfiltration.")
     return report.model_copy(
         update={
             "scope_summary": scope_summary,
@@ -862,6 +880,7 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
     provider = get_scanner_provider(settings, scan["scanner_backend"])
     try:
         scan_protocols = json.loads(scan["scan_profile_json"] or "[]")
+        testing_context = json.loads(scan["scanner_context_json"] or "{}")
         _update_scan_progress(scan_id, user["organization_id"], 35, "Running scanner stages. This can take several minutes for full assessments.")
         try:
             scheduled = provider.schedule(
@@ -870,6 +889,7 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
                 assessment_mode=scan["assessment_mode"],
                 scan_tier=scan["scan_tier"],
                 scan_protocols=scan_protocols,
+                testing_context=testing_context,
             )
         except TypeError:
             scheduled = provider.schedule(scan["normalized_target"], scan["asset_type"])
@@ -2038,10 +2058,42 @@ def create_scan(
                 f"Ethical testing depth: {depth}",
                 f"Validation mode: {validation_mode.replace('_', ' ')}",
                 f"Vulnerability focus: {', '.join(focus)}",
+                "Rules of engagement: no destructive testing, no brute force, no persistence, and no data exfiltration",
             ]
         )
         if payload.known_vulnerabilities:
             scan_protocols.append(f"Known vulnerabilities to validate: {payload.known_vulnerabilities.strip()}")
+        api_base_url = _clean_optional(payload.api_base_url)
+        if api_base_url:
+            try:
+                api_authorization = authorize_target(
+                    user["email_domain"],
+                    api_base_url,
+                    "website",
+                    allow_attested_external=payload.target_authorization_accepted,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"API base URL is not valid: {exc}") from exc
+            _require_target_network_policy(
+                api_authorization["normalized_target"],
+                api_authorization["target_kind"],
+            )
+            scan_protocols.append(f"API base URL included for approved testing: {api_base_url}")
+        if payload.authenticated_testing_allowed:
+            scan_protocols.append("Authenticated testing approved by rules of engagement; credentials are not stored by KryptScan")
+        if payload.test_account_username:
+            account_line = f"Approved test account identifier: {payload.test_account_username.strip()}"
+            if payload.test_account_role:
+                account_line = f"{account_line} ({payload.test_account_role.strip()})"
+            scan_protocols.append(account_line)
+        if payload.access_notes:
+            scan_protocols.append(f"Access notes: {payload.access_notes.strip()}")
+        if payload.out_of_scope:
+            scan_protocols.append(f"Out-of-scope boundaries: {payload.out_of_scope.strip()}")
+        if payload.critical_workflows:
+            scan_protocols.append(f"Business-critical workflows to review: {payload.critical_workflows.strip()}")
+        if payload.emergency_stop:
+            scan_protocols.append(f"Emergency stop instruction: {payload.emergency_stop.strip()}")
 
     report_company_name = _clean_optional(payload.report_company_name)
     report_company_address = _clean_optional(payload.report_company_address)
@@ -2064,6 +2116,18 @@ def create_scan(
         report_emergency_contact,
     ]
     report_intake_requested = any(report_values)
+    scanner_context = {}
+    if assessment_mode == "ethical_pentesting":
+        scanner_context = {
+            "api_base_url": _clean_optional(payload.api_base_url),
+            "authenticated_testing_allowed": payload.authenticated_testing_allowed,
+            "test_account_username": _clean_optional(payload.test_account_username),
+            "test_account_role": _clean_optional(payload.test_account_role),
+            "access_notes": _clean_optional(payload.access_notes),
+            "out_of_scope": _clean_optional(payload.out_of_scope),
+            "critical_workflows": _clean_optional(payload.critical_workflows),
+            "emergency_stop": _clean_optional(payload.emergency_stop),
+        }
     if report_intake_requested and not payload.engagement_id:
         missing_report_fields = [
             label
@@ -2196,12 +2260,13 @@ def create_scan(
                 scan_tier,
                 status,
                 scan_profile_json,
+                scanner_context_json,
                 progress_percent,
                 progress_message,
                 created_at,
                 started_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)
             """,
             (
                 user["organization_id"],
@@ -2212,6 +2277,7 @@ def create_scan(
                 assessment_mode,
                 scan_tier,
                 json.dumps(scan_protocols),
+                json.dumps(scanner_context),
                 5,
                 "Scan queued. Waiting for scanner worker.",
                 now,
