@@ -816,7 +816,7 @@ function renderDashboard(payload) {
     "dashboard-title"
   ).textContent = `${payload.organization.name} Security Command`;
   const clientOnly = payload.user?.role === "client_viewer";
-  const paymentRequired = Boolean(payload.stats?.payment_required);
+  const paymentRequired = Boolean(payload.stats?.payment_required && !payload.stats?.payment_demo_mode);
   document.getElementById("payment-panel").classList.toggle("hidden", payload.user?.role !== "owner" || !paymentRequired);
   document.getElementById("scan-form").classList.toggle("hidden", clientOnly);
   document.getElementById("manual-finding-form").classList.toggle("hidden", clientOnly || !state.activeScanId);
@@ -846,7 +846,7 @@ function renderDashboard(payload) {
   const severity = payload.stats.latest_severity_counts || {};
   const cards = [
     ["Authorized Assets", payload.stats.authorized_assets ?? 0],
-    ["Total Scans", payload.stats.total_scans ?? 0],
+    ["Current Scans", payload.stats.total_scans ?? 0],
     ["Active Scans", payload.stats.active_scans ?? 0],
     ["Latest Risk Score", payload.stats.latest_risk_score ?? "N/A"],
     ["Critical Findings", severity.critical ?? 0],
@@ -866,7 +866,7 @@ function renderDashboard(payload) {
   const scanList = document.getElementById("scan-list");
   if (!payload.scans.length) {
     scanList.innerHTML =
-      '<div class="check-card">No scans yet. Verify your domain email and launch the first assessment.</div>';
+      '<div class="check-card">No active scan is stored. Launch an assessment, review the result, then email or download the PDF before starting another test.</div>';
     return;
   }
 
@@ -892,6 +892,10 @@ function renderDashboard(payload) {
             <span>${severityText(scan.severity_counts)}</span>
           </div>
           <div class="scan-progress" aria-label="Scan progress">
+            <div class="scan-stage-line">
+              <strong>${escapeHtml(stageLabel(scan.progress_percent, scan.status))}</strong>
+              <span>${escapeHtml(scan.status)}</span>
+            </div>
             <div class="bar-track">
               <div class="bar-fill" style="width: ${Math.max(5, Number(scan.progress_percent || 0))}%;"></div>
             </div>
@@ -939,7 +943,7 @@ function renderScannerHealth(payload) {
       .map(
         (tool) => {
           const statusLabel = tool.available ? "available" : tool.optional ? "setup needed" : "missing";
-          const statusClass = tool.available ? "completed" : tool.optional ? "running" : "warn";
+          const statusClass = tool.available ? "completed" : tool.optional ? "setup-needed" : "warn";
           return `
           <article class="tool-card">
             <strong>${escapeHtml(tool.name)}</strong>
@@ -954,6 +958,20 @@ function renderScannerHealth(payload) {
       )
       .join("")}
   `;
+}
+
+function stageLabel(percent, status) {
+  const value = Number(percent || 0);
+  if (status === "completed") return "Report complete";
+  if (status === "failed") return "Attention required";
+  if (value < 15) return "Scope validation";
+  if (value < 28) return "DNS and recon";
+  if (value < 42) return "Network discovery";
+  if (value < 56) return "TLS and web posture";
+  if (value < 70) return "Web/API crawling";
+  if (value < 82) return "Vulnerability correlation";
+  if (value < 92) return "AI triage and prioritization";
+  return "Report generation";
 }
 
 function renderMembers(members) {
@@ -1105,7 +1123,7 @@ function renderReport(report) {
     .classList.toggle("hidden", !activeScan?.report_pdf_available);
   renderReportCockpit(report, activeScan);
 
-  renderBars("severity-chart", [
+  renderSeverityCockpit("severity-chart", [
     { label: "Critical", value: report.severity_counts.critical, color: "#d94b37" },
     { label: "High", value: report.severity_counts.high, color: "#ff7a45" },
     { label: "Medium", value: report.severity_counts.medium, color: "#efb53d" },
@@ -1229,6 +1247,45 @@ function renderCompactList(elementId, items) {
   element.innerHTML = normalized.length
     ? normalized.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
     : "<li>No additional detail supplied.</li>";
+}
+
+function renderSeverityCockpit(elementId, items) {
+  const element = document.getElementById(elementId);
+  const total = items.reduce((sum, item) => sum + Number(item.value || 0), 0);
+  let cursor = 0;
+  const segments = items
+    .map((item) => {
+      const value = Number(item.value || 0);
+      const start = total ? (cursor / total) * 100 : 0;
+      cursor += value;
+      const end = total ? (cursor / total) * 100 : 0;
+      return `${item.color} ${start}% ${end}%`;
+    })
+    .filter(Boolean)
+    .join(", ");
+  const conic = total ? segments : "rgba(148, 163, 184, 0.28) 0% 100%";
+  element.innerHTML = `
+    <div class="severity-cockpit">
+      <div class="severity-donut" style="background: conic-gradient(${conic});">
+        <div>
+          <strong>${total}</strong>
+          <span>findings</span>
+        </div>
+      </div>
+      <div class="severity-ledger">
+        ${items
+          .map(
+            (item) => `
+              <div class="severity-row">
+                <span><i style="background:${item.color};"></i>${escapeHtml(item.label)}</span>
+                <strong>${Number(item.value || 0)}</strong>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
 }
 
 function renderBars(elementId, items) {

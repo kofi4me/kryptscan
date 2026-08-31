@@ -1390,9 +1390,9 @@ textarea {
   padding: 1.1rem;
   border-radius: var(--radius-xl);
   background:
-    radial-gradient(circle at 10% 0%, rgba(47, 99, 255, 0.22), transparent 32%),
-    radial-gradient(circle at 88% 12%, rgba(42, 181, 127, 0.18), transparent 34%),
-    linear-gradient(135deg, #08111f 0%, #101c31 54%, #17243a 100%);
+    linear-gradient(135deg, rgba(47, 99, 255, 0.2), transparent 30%),
+    linear-gradient(225deg, rgba(255, 74, 74, 0.16), transparent 35%),
+    linear-gradient(135deg, #050914 0%, #08111f 42%, #111827 100%);
   border: 1px solid rgba(168, 196, 255, 0.14);
   box-shadow: 0 30px 90px rgba(8, 17, 31, 0.26);
 }
@@ -1439,6 +1439,85 @@ textarea {
   gap: 0.8rem;
 }
 
+.severity-cockpit {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+}
+
+.severity-donut {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.25),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.severity-donut > div {
+  width: 82px;
+  height: 82px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  background: #050914;
+  border: 1px solid rgba(168, 196, 255, 0.18);
+  color: #f8fbff;
+}
+
+.severity-donut strong {
+  font-family: "Sora", sans-serif;
+  font-size: 1.75rem;
+}
+
+.severity-donut span {
+  margin-top: -0.25rem;
+  color: #9fb0c9;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.severity-ledger {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.severity-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: center;
+  padding: 0.55rem 0.65rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(168, 196, 255, 0.1);
+}
+
+.severity-row span {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  color: #dce8ff;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.severity-row i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 16px currentColor;
+}
+
+.severity-row strong {
+  color: #f8fbff;
+}
+
 .bar-row {
   display: grid;
   gap: 0.38rem;
@@ -1453,7 +1532,8 @@ textarea {
 
 .bar-track {
   height: 12px;
-  background: rgba(168, 196, 255, 0.16);
+  background: rgba(3, 7, 18, 0.72);
+  border: 1px solid rgba(168, 196, 255, 0.13);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -1469,20 +1549,46 @@ textarea {
   display: grid;
   gap: 0.62rem;
   margin-top: 0.9rem;
-  padding: 0.85rem;
+  padding: 0.95rem;
   background:
-    linear-gradient(135deg, rgba(3, 7, 18, 0.98), rgba(17, 24, 39, 0.98) 58%, rgba(69, 10, 10, 0.96));
-  border: 1px solid rgba(239, 68, 68, 0.45);
+    linear-gradient(135deg, #020617 0%, #111827 52%, #450a0a 100%);
+  border: 1px solid rgba(248, 113, 113, 0.62);
   border-radius: 16px;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 16px 34px rgba(15, 23, 42, 0.2);
+    0 18px 38px rgba(0, 0, 0, 0.3);
+}
+
+.scan-stage-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: center;
+  color: #f8fafc;
+}
+
+.scan-stage-line strong {
+  font-family: "Sora", sans-serif;
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scan-stage-line span {
+  padding: 0.32rem 0.56rem;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(239, 68, 68, 0.22);
+  border: 1px solid rgba(248, 113, 113, 0.44);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .scan-progress .bar-track {
-  height: 20px;
-  background: #000;
-  border: 1px solid rgba(248, 113, 113, 0.72);
+  height: 24px;
+  background: #020617;
+  border: 1px solid rgba(254, 202, 202, 0.75);
   box-shadow:
     inset 0 1px 10px rgba(0, 0, 0, 0.92),
     0 0 0 1px rgba(239, 68, 68, 0.18);
@@ -1490,10 +1596,10 @@ textarea {
 
 .scan-progress .bar-fill {
   min-width: 20px;
-  background: linear-gradient(90deg, #000 0%, #450a0a 24%, #dc2626 68%, #ff3b30 100%);
+  background: linear-gradient(90deg, #0b0f19 0%, #7f1d1d 28%, #dc2626 68%, #ffedd5 100%);
   box-shadow:
-    0 0 30px rgba(239, 68, 68, 0.72),
-    0 0 16px rgba(255, 59, 48, 0.62);
+    0 0 30px rgba(239, 68, 68, 0.85),
+    0 0 18px rgba(255, 237, 213, 0.52);
 }
 
 .scan-progress .meta-line {
@@ -1503,7 +1609,8 @@ textarea {
 }
 
 .scan-progress .meta-line span:last-child {
-  color: #fecaca;
+  color: #ffe4e6;
+  text-align: right;
 }
 
 .trend-chart svg {
@@ -1575,9 +1682,9 @@ textarea {
   border-radius: 24px;
   color: #f7f9fc;
   background:
-    radial-gradient(circle at 82% 10%, rgba(115, 204, 255, 0.24), transparent 30%),
-    radial-gradient(circle at 12% 20%, rgba(47, 99, 255, 0.2), transparent 34%),
-    linear-gradient(135deg, #0a1425 0%, #12213a 62%, #0d2d35 100%);
+    linear-gradient(135deg, rgba(47, 99, 255, 0.24), transparent 30%),
+    linear-gradient(230deg, rgba(255, 122, 69, 0.2), transparent 34%),
+    linear-gradient(135deg, #030712 0%, #0f172a 60%, #1f2937 100%);
   border: 1px solid rgba(168, 196, 255, 0.16);
   box-shadow: 0 22px 50px rgba(0, 0, 0, 0.3);
 }
@@ -1597,7 +1704,7 @@ textarea {
   height: 136px;
   border-radius: 50%;
   justify-self: end;
-  background: conic-gradient(#ff5a4f var(--risk-angle), rgba(115, 204, 255, 0.16) 0);
+  background: conic-gradient(#ef4444 var(--risk-angle), rgba(59, 130, 246, 0.18) 0);
   display: grid;
   place-items: center;
   box-shadow:
@@ -1651,8 +1758,8 @@ textarea {
   padding: 1rem;
   border-radius: 18px;
   background:
-    linear-gradient(180deg, rgba(22, 38, 64, 0.96) 0%, rgba(13, 24, 42, 0.96) 100%);
-  border: 1px solid rgba(168, 196, 255, 0.14);
+    linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(3, 7, 18, 0.98) 100%);
+  border: 1px solid rgba(96, 165, 250, 0.18);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
@@ -1687,8 +1794,9 @@ textarea {
   min-height: 150px;
   padding: 1rem;
   border-radius: 18px;
-  background: rgba(12, 24, 42, 0.82);
-  border: 1px solid rgba(168, 196, 255, 0.13);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(3, 7, 18, 0.94));
+  border: 1px solid rgba(96, 165, 250, 0.15);
 }
 
 .report-context-grid p {
@@ -1756,7 +1864,8 @@ textarea {
   margin: 0.75rem 0 0.55rem;
   border-radius: 999px;
   overflow: hidden;
-  background: rgba(20, 32, 51, 0.08);
+  background: rgba(2, 6, 23, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.16);
 }
 
 .finding-meter span {
@@ -1868,7 +1977,8 @@ textarea {
 .pill.medium,
 .pill.warn,
 .pill.running,
-.pill.queued {
+.pill.queued,
+.pill.setup-needed {
   background: rgba(239, 181, 61, 0.16);
   color: #7a5814;
 }

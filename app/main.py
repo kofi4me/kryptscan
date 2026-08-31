@@ -588,11 +588,14 @@ def _staged_scan_progress(started: float, minimum_seconds: int, floor: int = 45,
     ratio = min(1.0, elapsed / minimum_seconds)
     percent = min(ceiling, max(floor, floor + round((ceiling - floor) * ratio)))
     stages = [
-        (0.18, "Running network discovery, port checks, and service fingerprinting."),
-        (0.36, "Reviewing web, TLS, HTTP, and exposed application signals."),
-        (0.54, "Correlating scanner evidence with known vulnerability patterns."),
-        (0.72, "Prioritizing exploitability, business danger, and remediation urgency."),
-        (1.0, "Completing AI-assisted triage and professional report preparation."),
+        (0.12, "Stage 1/8: validating authorization, target type, and scanner policy."),
+        (0.24, "Stage 2/8: discovering DNS, subdomain, and external exposure signals."),
+        (0.36, "Stage 3/8: running network discovery, port checks, and service fingerprinting."),
+        (0.48, "Stage 4/8: reviewing TLS, certificates, HTTP headers, and web protections."),
+        (0.60, "Stage 5/8: crawling web/API surfaces and identifying technologies."),
+        (0.72, "Stage 6/8: correlating scanner evidence with known vulnerability patterns."),
+        (0.86, "Stage 7/8: prioritizing exploitability, business danger, and remediation urgency."),
+        (1.0, "Stage 8/8: completing AI-assisted triage and professional report preparation."),
     ]
     for limit, message in stages:
         if ratio <= limit:
@@ -1424,7 +1427,7 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
                 WHERE scans.organization_id = ? AND scans.requested_by = ? AND scans.status = 'completed'
                 GROUP BY scans.id
                 ORDER BY scans.id DESC
-                LIMIT 15
+                LIMIT 1
                 """,
                 (user["organization_id"], user["id"]),
             ).fetchall()
@@ -1445,6 +1448,7 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
                     "latest_risk_score": scan_summaries[0].risk_score if scan_summaries else None,
                     "latest_severity_counts": scan_summaries[0].severity_counts if scan_summaries and scan_summaries[0].severity_counts else SeverityCounts(),
                     "payment_required": settings.payment_required,
+                    "payment_demo_mode": settings.payment_demo_mode,
                 },
                 scans=scan_summaries,
             )
@@ -1462,7 +1466,7 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
             WHERE scans.organization_id = ? AND scans.requested_by = ?
             GROUP BY scans.id
             ORDER BY scans.id DESC
-            LIMIT 15
+            LIMIT 1
             """,
             (user["organization_id"], user["id"]),
         ).fetchall()
@@ -1531,6 +1535,7 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
             else SeverityCounts()
         ),
         "payment_required": settings.payment_required,
+        "payment_demo_mode": settings.payment_demo_mode,
     }
 
     return DashboardResponse(

@@ -30,13 +30,13 @@ RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go
     && tar -C /usr/local -xzf /tmp/go.tgz \
     && rm /tmp/go.tgz
 
-RUN go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
-    && go install github.com/projectdiscovery/httpx/cmd/httpx@latest \
-    && go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest \
-    && go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest \
-    && go install github.com/projectdiscovery/katana/cmd/katana@latest \
-    && go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest \
-    && go install github.com/owasp-amass/amass/v4/...@latest
+RUN go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && go clean -cache -modcache
+RUN go install github.com/projectdiscovery/httpx/cmd/httpx@latest && go clean -cache -modcache
+RUN go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && go clean -cache -modcache
+RUN go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest && go clean -cache -modcache
+RUN go install github.com/projectdiscovery/katana/cmd/katana@latest && go clean -cache -modcache
+RUN go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && go clean -cache -modcache
+RUN go install github.com/owasp-amass/amass/v4/...@latest && go clean -cache -modcache
 
 RUN pip install --no-cache-dir \
     checkov \
