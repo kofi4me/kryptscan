@@ -152,6 +152,7 @@ def _tool_output_is_usable(tool: str, returncode: int, output: str) -> bool:
         "connection refused",
         "timed out after",
         "is not installed",
+        "required module not found",
     ]
     if any(marker in lower for marker in failure_markers):
         return False
@@ -197,29 +198,266 @@ def _tool_finding(target: str, tool: str, succeeded: bool, detail: str, category
     )
 
 
-def _risk_indicator(target: str, tool: str, output: str, category: str) -> Finding | None:
-    lower = output.lower()
+def _parse_tool_findings(target: str, tool: str, output: str, category: str) -> list[Finding]:
     if category == "Scanner Toolchain" or not output.strip():
-        return None
+        return []
     if not _tool_output_is_usable(tool.lower(), 0, output):
-        return None
+        return []
+    parsers = {
+        "nmap": _parse_nmap_findings,
+        "nuclei": _parse_nuclei_findings,
+        "nikto": _parse_nikto_findings,
+        "owasp zap baseline": _parse_zap_findings,
+        "zap-baseline.py": _parse_zap_findings,
+        "sslyze": _parse_tls_findings,
+        "testssl.sh": _parse_tls_findings,
+        "whatweb": _parse_whatweb_findings,
+        "wafw00f": _parse_wafw00f_findings,
+        "httpx": _parse_httpx_findings,
+    }
+    parser = parsers.get(tool.lower())
+    if parser:
+        return parser(target, tool, output, category)
+    return _generic_evidence_findings(target, tool, output, category)
+
+
+def _generic_evidence_findings(target: str, tool: str, output: str, category: str) -> list[Finding]:
+    lower = output.lower()
     if tool.lower() in {"trivy", "grype", "semgrep", "checkov", "gitleaks"}:
-        return None
+        return []
     markers = ["vulnerab", "critical", "high", "weak", "outdated", "exposed", "misconfig", "cve-"]
     if not any(marker in lower for marker in markers):
-        return None
+        return []
     digest = hashlib.sha256(f"{tool}:{target}:{output[:300]}".encode("utf-8")).hexdigest()[:8]
     severity = "high" if any(marker in lower for marker in ["critical", "high", "cve-"]) else "medium"
-    return _finding(
+    return [_finding(
         target,
-        f"{tool} risk indicator {digest}",
+        f"{tool} evidence requires analyst review {digest}",
         severity,
         category,
         tool.lower(),
         output,
         "Validate the affected service within the approved scope, patch or harden the control, and retest.",
         8.0 if severity == "high" else 5.8,
-    )
+    )]
+
+
+def _parse_nmap_findings(target: str, tool: str, output: str, category: str) -> list[Finding]:
+    findings: list[Finding] = []
+    sensitive_services = {
+        "ftp": ("medium", 5.8, "FTP is externally reachable"),
+        "telnet": ("high", 8.1, "Telnet is externally reachable"),
+        "ssh": ("low", 3.7, "SSH is externally reachable"),
+        "rdp": ("medium", 6.2, "RDP is externally reachable"),
+        "mysql": ("medium", 6.0, "MySQL is externally reachable"),
+        "postgresql": ("medium", 6.0, "PostgreSQL is externally reachable"),
+        "mssql": ("medium", 6.0, "Microsoft SQL service is externally reachable"),
+        "smb": ("medium", 6.5, "SMB is externally reachable"),
+    }
+    for line in output.splitlines():
+        match = re.match(r"^(\d+)/(tcp|udp)\s+open\s+(\S+)(?:\s+(.*))?$", line.strip(), re.I)
+        if not match:
+            continue
+        port, proto, service, version = match.groups()
+        normalized_service = service.lower()
+        if normalized_service in {"http", "https", "ssl/http"}:
+            findings.append(
+                _finding(
+                    target,
+                    f"Public web service exposed on {port}/{proto}",
+                    "info",
+                    category,
+                    "https" if "ssl" in normalized_service or port == "443" else "http",
+                    line,
+                    "Confirm the service is intentional, patched, monitored, and protected by appropriate web security controls.",
+                )
+            )
+            continue
+        severity, cvss, title = sensitive_services.get(
+            normalized_service,
+            ("low", 2.8, f"Externally reachable service detected on {port}/{proto}"),
+        )
+        findings.append(
+            _finding(
+                target,
+                title,
+                severity,
+                category,
+                normalized_service,
+                line,
+                f"Restrict {service} exposure to approved source networks, validate patch level, and disable it if not business-required.",
+                cvss,
+            )
+        )
+    return findings[:20]
+
+
+def _parse_nuclei_findings(target: str, tool: str, output: str, category: str) -> list[Finding]:
+    findings: list[Finding] = []
+    severity_cvss = {"critical": 9.4, "high": 8.0, "medium": 5.6, "low": 2.8, "info": 0.0}
+    for line in output.splitlines():
+        clean = line.strip()
+        if not clean:
+            continue
+        severity = "info"
+        match = re.search(r"\[(critical|high|medium|low|info)\]", clean, re.I)
+        if match:
+            severity = match.group(1).lower()
+        elif any(word in clean.lower() for word in ["cve-", "critical"]):
+            severity = "high"
+        title = clean.split("]")[-1].strip()[:120] or "Nuclei template matched target evidence"
+        findings.append(
+            _finding(
+                target,
+                f"Nuclei: {title}",
+                severity,
+                category,
+                "nuclei",
+                clean,
+                "Validate the matched template evidence, patch the affected component, and retest with the same template set.",
+                severity_cvss.get(severity, 0.0),
+            )
+        )
+    return findings[:30]
+
+
+def _parse_nikto_findings(target: str, tool: str, output: str, category: str) -> list[Finding]:
+    findings: list[Finding] = []
+    for line in output.splitlines():
+        clean = line.strip()
+        if not clean.startswith("+"):
+            continue
+        lower = clean.lower()
+        if any(skip in lower for skip in ["target ip", "target hostname", "target port", "start time", "end time", "requests:"]):
+            continue
+        severity, cvss = ("low", 3.2)
+        if any(marker in lower for marker in ["osvdb", "cve-", "vulnerab", "outdated", "x-frame-options", "x-content-type-options", "cookie"]):
+            severity, cvss = ("medium", 5.4)
+        findings.append(
+            _finding(
+                target,
+                f"Nikto: {clean.lstrip('+ ').split(':', 1)[0][:90]}",
+                severity,
+                category,
+                "nikto",
+                clean,
+                "Review the web server finding, apply hardening or patching, and confirm the condition is resolved.",
+                cvss,
+            )
+        )
+    return findings[:30]
+
+
+def _parse_zap_findings(target: str, tool: str, output: str, category: str) -> list[Finding]:
+    findings: list[Finding] = []
+    for line in output.splitlines():
+        clean = line.strip()
+        if not clean or not re.search(r"(WARN-|FAIL-|ALERT)", clean, re.I):
+            continue
+        severity, cvss = ("low", 3.4)
+        if re.search(r"(FAIL-|high|critical)", clean, re.I):
+            severity, cvss = ("medium", 5.8)
+        findings.append(
+            _finding(
+                target,
+                f"OWASP ZAP baseline: {clean[:100]}",
+                severity,
+                category,
+                "zap",
+                clean,
+                "Review the ZAP baseline alert, apply the recommended web control, and rerun the baseline scan.",
+                cvss,
+            )
+        )
+    return findings[:25]
+
+
+def _parse_tls_findings(target: str, tool: str, output: str, category: str) -> list[Finding]:
+    findings: list[Finding] = []
+    checks = [
+        ("certificate expired", "high", 7.5, "TLS certificate appears expired"),
+        ("self-signed", "medium", 5.3, "Self-signed TLS certificate detected"),
+        ("heartbleed", "high", 8.0, "Heartbleed-related TLS evidence detected"),
+        ("robot", "medium", 5.9, "ROBOT TLS exposure requires review"),
+        ("sslv2", "high", 8.0, "SSLv2 support detected"),
+        ("sslv3", "high", 7.8, "SSLv3 support detected"),
+        ("tls 1.0", "medium", 5.3, "TLS 1.0 support should be disabled"),
+        ("tls 1.1", "medium", 5.0, "TLS 1.1 support should be disabled"),
+        ("weak", "medium", 5.0, "Weak TLS setting detected"),
+        ("vulnerable", "high", 7.5, "TLS vulnerability evidence detected"),
+    ]
+    lower = output.lower()
+    for marker, severity, cvss, title in checks:
+        if marker in lower:
+            evidence = next((line.strip() for line in output.splitlines() if marker in line.lower()), output[:500])
+            findings.append(
+                _finding(
+                    target,
+                    f"{tool}: {title}",
+                    severity,
+                    category,
+                    "tls",
+                    evidence,
+                    "Disable weak protocols/ciphers, replace invalid certificates, and retest TLS posture.",
+                    cvss,
+                )
+            )
+    return findings[:12]
+
+
+def _parse_whatweb_findings(target: str, tool: str, output: str, category: str) -> list[Finding]:
+    findings: list[Finding] = []
+    lower = output.lower()
+    if "passwordfield" in lower:
+        findings.append(
+            _finding(
+                target,
+                "Login or password field detected",
+                "info",
+                category,
+                "whatweb",
+                output,
+                "If login testing is in scope, perform authenticated testing with approved test credentials.",
+            )
+        )
+    jquery = re.search(r"jquery[^\d]*(\d+\.\d+(?:\.\d+)?)", output, re.I)
+    if jquery and jquery.group(1).startswith(("1.", "2.")):
+        findings.append(
+            _finding(
+                target,
+                f"Older jQuery version observed: {jquery.group(1)}",
+                "medium",
+                category,
+                "jquery",
+                output,
+                "Confirm whether the detected jQuery version is actually served to users, upgrade if supported, and retest.",
+                5.0,
+            )
+        )
+    return findings
+
+
+def _parse_wafw00f_findings(target: str, tool: str, output: str, category: str) -> list[Finding]:
+    lower = output.lower()
+    if "no waf detected" in lower or "generic detection results" in lower:
+        return [
+            _finding(
+                target,
+                "No web application firewall was clearly detected",
+                "low",
+                category,
+                "waf",
+                output,
+                "Confirm whether a WAF or equivalent edge protection is expected for this application and enable monitoring rules where appropriate.",
+                3.1,
+            )
+        ]
+    return []
+
+
+def _parse_httpx_findings(target: str, tool: str, output: str, category: str) -> list[Finding]:
+    finding = _http_status_finding(target, output)
+    return [finding] if finding else []
 
 
 def _http_status_finding(target: str, output: str) -> Finding | None:
@@ -403,15 +641,10 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
             stage_started = time.monotonic()
             ok, output = _run(command, output_dir)
             elapsed = round(time.monotonic() - stage_started, 1)
-            stage_results.append(f"{tool}: {'completed' if ok else 'not available/error'} in {elapsed}s")
+            stage_results.append(f"{tool}: {'completed' if ok else 'incomplete'} in {elapsed}s")
             findings.append(_tool_finding(target, tool, ok, output, category))
-            risk = _risk_indicator(target, tool, output, category) if ok else None
-            if risk is not None:
-                findings.append(risk)
-            if tool == "httpx" and ok:
-                http_risk = _http_status_finding(target, output)
-                if http_risk is not None:
-                    findings.append(http_risk)
+            if ok:
+                findings.extend(_parse_tool_findings(target, tool, output, category))
 
     _set_job_status(
         job_id,

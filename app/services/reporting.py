@@ -62,17 +62,24 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
         key=lambda item: (SEVERITY_WEIGHTS[item.severity], item.cvss),
         reverse=True,
     )
-    severity_counter = Counter(item.severity for item in findings)
-    counts = _serialize_counts(severity_counter)
-    weighted_total = sum(SEVERITY_WEIGHTS[item.severity] for item in findings)
-    average_weight = weighted_total / max(len(findings), 1)
-    risk_score = min(100, round(average_weight * 11))
-
     reportable_findings = [
         item
         for item in findings
         if item.category not in {"Scanner Toolchain", "AI Reporting", "Assessment Quality"}
     ]
+    actionable_findings = [
+        item
+        for item in reportable_findings
+        if item.severity in {"critical", "high", "medium", "low"}
+    ]
+    severity_counter = Counter(item.severity for item in findings)
+    counts = _serialize_counts(severity_counter)
+    weighted_total = sum(SEVERITY_WEIGHTS[item.severity] for item in actionable_findings)
+    critical_high_pressure = counts.critical * 12 + counts.high * 7
+    medium_pressure = min(counts.medium * 3, 18)
+    low_pressure = min(counts.low, 6)
+    average_weight = weighted_total / max(len(actionable_findings), 1)
+    risk_score = min(100, round((average_weight * 8) + critical_high_pressure + medium_pressure + low_pressure))
     service_counter = Counter(item.service or "unknown" for item in reportable_findings)
     category_counter = Counter(item.category for item in reportable_findings)
 
@@ -106,19 +113,19 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
         ),
         ComplianceCheck(
             name="Externally reachable service hygiene",
-            status="warn" if any(item.service in {"http", "https", "ssh", "rdp"} for item in findings) else "pass",
+            status="warn" if any(item.service in {"http", "https", "ssh", "rdp"} for item in reportable_findings) else "pass",
             detail=(
                 "Public-facing services were included in the findings set and should be reviewed first."
-                if any(item.service in {"http", "https", "ssh", "rdp"} for item in findings)
+                if any(item.service in {"http", "https", "ssh", "rdp"} for item in reportable_findings)
                 else "No elevated public-facing service concentration detected in findings."
             ),
         ),
         ComplianceCheck(
             name="Remediation program readiness",
-            status="pass" if findings else "warn",
+            status="pass" if actionable_findings else "warn",
             detail=(
                 "Remediation actions are prioritized and ready for handoff."
-                if findings
+                if actionable_findings
                 else "No findings were available to build a remediation queue."
             ),
         ),
