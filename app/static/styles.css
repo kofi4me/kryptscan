@@ -39,9 +39,9 @@ body {
   color: var(--ink);
   font-family: "Manrope", "Segoe UI", sans-serif;
   background:
-    radial-gradient(circle at 14% 8%, rgba(47, 99, 255, 0.18), transparent 24%),
-    radial-gradient(circle at 84% 10%, rgba(217, 75, 55, 0.18), transparent 24%),
-    linear-gradient(180deg, #050b18 0%, #081224 36%, #edf3f8 36%, #f7f9fc 100%);
+    radial-gradient(circle at 16% 18%, rgba(47, 99, 255, 0.22), transparent 30%),
+    radial-gradient(circle at 86% 14%, rgba(217, 75, 55, 0.2), transparent 28%),
+    linear-gradient(135deg, #060b16 0%, #0b1730 48%, #170b14 100%);
 }
 
 body.modal-open {
@@ -53,13 +53,13 @@ body.modal-open {
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(120deg, transparent 0 40%, rgba(255, 255, 255, 0.3) 40% 52%, transparent 52% 100%),
+    linear-gradient(120deg, transparent 0 40%, rgba(47, 99, 255, 0.08) 40% 52%, transparent 52% 100%),
     repeating-linear-gradient(
       90deg,
       transparent 0 72px,
-      rgba(20, 32, 51, 0.03) 72px 73px
+      rgba(255, 255, 255, 0.025) 72px 73px
     );
-  opacity: 0.65;
+  opacity: 0.7;
 }
 
 .masthead,
@@ -80,7 +80,7 @@ body.modal-open {
   justify-content: space-between;
   gap: 1rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(5, 11, 24, 0.78);
+  background: rgba(5, 11, 24, 0.72);
   backdrop-filter: blur(18px);
 }
 
@@ -211,9 +211,10 @@ h4 {
 .shell {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 1.5rem 2rem 3rem;
+  min-height: calc(100vh - 74px);
+  padding: 1.1rem 2rem 1.2rem;
   display: grid;
-  gap: 1.5rem;
+  gap: 1rem;
 }
 
 .panel {
@@ -249,35 +250,38 @@ h4 {
 
 .landing-page {
   display: grid;
+  grid-template-rows: 1fr auto;
   gap: 1rem;
+  min-height: calc(100vh - 98px);
 }
 
 .landing-hero {
-  min-height: min(720px, calc(100vh - 112px));
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.02fr) minmax(400px, 0.88fr);
+  grid-template-columns: minmax(0, 0.92fr) minmax(460px, 1.08fr);
   align-items: center;
   gap: clamp(1.25rem, 2.6vw, 2.4rem);
-  padding: clamp(1.2rem, 2.6vw, 2.4rem);
+  padding: clamp(1.3rem, 3vw, 3rem);
   background:
     radial-gradient(circle at 13% 18%, rgba(47, 99, 255, 0.28), transparent 28%),
     radial-gradient(circle at 86% 10%, rgba(217, 75, 55, 0.2), transparent 24%),
-    linear-gradient(135deg, #071123 0%, #101f38 48%, #071626 100%);
+    linear-gradient(135deg, rgba(7, 17, 35, 0.94) 0%, rgba(16, 31, 56, 0.92) 48%, rgba(16, 8, 22, 0.94) 100%);
   color: #f7f9fc;
 }
 
 .landing-hero h1 {
-  max-width: 16ch;
-  font-size: clamp(2.6rem, 4.1vw, 4.7rem);
+  max-width: 15ch;
+  font-size: clamp(2.8rem, 5vw, 5.8rem);
+  line-height: 0.98;
 }
 
 .landing-hero .lede {
   max-width: 60ch;
-  font-size: clamp(1rem, 1.25vw, 1.13rem);
+  font-size: clamp(1.04rem, 1.35vw, 1.2rem);
 }
 
 .landing-hero-copy {
-  max-width: 880px;
+  max-width: 760px;
 }
 
 .landing-side {
@@ -290,7 +294,7 @@ h4 {
   align-items: center;
   gap: 0.8rem;
   flex-wrap: wrap;
-  margin: 1.3rem 0 0;
+  margin: 1.5rem 0 0;
 }
 
 .hero-actions button {
@@ -335,13 +339,13 @@ h4 {
 .dashboard-preview {
   position: relative;
   min-height: 0;
-  height: clamp(340px, 35vw, 500px);
-  max-height: 500px;
+  height: clamp(420px, 46vw, 640px);
+  max-height: 640px;
   aspect-ratio: 16 / 10;
   display: block;
   margin: 0;
   padding: 0;
-  border-radius: 22px;
+  border-radius: 24px;
   border: 1px solid rgba(100, 141, 196, 0.22);
   background:
     radial-gradient(circle at 25% 20%, rgba(47, 99, 255, 0.22), transparent 34%),
@@ -679,7 +683,10 @@ h4 {
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 1rem;
-  padding: 1.2rem 0 0.4rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  background: #02040a;
   color: rgba(241, 246, 255, 0.68);
 }
 
@@ -696,10 +703,15 @@ h4 {
   flex-wrap: wrap;
 }
 
-.site-footer a {
-  color: rgba(241, 246, 255, 0.76);
-  text-decoration: none;
-  font-weight: 800;
+.site-footer button {
+  width: auto;
+  min-height: 38px;
+  padding: 0.65rem 0.95rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
+  color: rgba(241, 246, 255, 0.84);
+  font-size: 0.86rem;
 }
 
 .site-footer p {
