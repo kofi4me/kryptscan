@@ -507,8 +507,11 @@ def _ai_triage_finding(target: str, findings: list[Finding]) -> Finding:
         "finding_count": len(findings),
         "priority_findings": evidence_items,
         "task": (
-            "Explain the business danger and mitigation priorities for an authorized vulnerability "
-            "assessment report. Do not include exploit steps, payloads, or instructions for unauthorized access."
+            "Write a concise executive triage section for an authorized vulnerability assessment or ethical "
+            "pen-test report. Include: 1) business risk, 2) most urgent remediation priorities, 3) likely "
+            "operational impact if ignored, 4) owner-friendly next actions, and 5) retest guidance. Do not "
+            "include exploit steps, payloads, bypass instructions, credential abuse guidance, persistence, "
+            "or instructions for unauthorized access."
         ),
     }
     request = urllib.request.Request(
@@ -516,7 +519,11 @@ def _ai_triage_finding(target: str, findings: list[Finding]) -> Finding:
         data=json.dumps(
             {
                 "model": OPENAI_MODEL,
-                "instructions": "You are a cybersecurity report writer for ethical, authorized assessments.",
+                "instructions": (
+                    "You are a senior cybersecurity report writer for ethical, authorized assessments. "
+                    "Write for business owners, MSP leaders, and IT managers. Be specific, professional, "
+                    "non-alarmist, and remediation-focused."
+                ),
                 "input": json.dumps(prompt),
             }
         ).encode("utf-8"),
