@@ -16,31 +16,54 @@
     <div class="page-aura"></div>
 
     <header class="masthead">
-      <a class="brand-lockup" href="/" aria-label="Kryptnet home">
+      <a class="brand-lockup" href="/" aria-label="KryptScan home">
         <img class="brand-logo" src="/static/images/kryptscan-logo.png" alt="KryptScan" />
       </a>
-
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="#home">Home</a>
+        <a href="#platform">Platform</a>
+        <a href="#vulnerability-assessment">Vulnerability Assessment</a>
+        <a href="#ethical-pentesting">Ethical Pen-Testing</a>
+        <a href="#reports">Reports</a>
+        <a href="#about">About</a>
+        <a href="#support">Support</a>
+      </nav>
+      <div class="nav-actions">
+        <button id="nav-signin-button" class="nav-button outline" type="button" data-auth-mode="signin">Sign In</button>
+        <button id="nav-signup-button" class="nav-button solid" type="button" data-auth-mode="signup">Sign Up</button>
+      </div>
     </header>
 
     <main class="shell">
-      <section id="landing-page" class="landing-page">
+      <section id="landing-page" class="landing-page" aria-label="KryptScan homepage">
         <article class="panel welcome-panel landing-hero">
-          <div class="landing-hero-copy">
+          <div id="home" class="landing-hero-copy">
             <div class="eyebrow">Vulnerability Assessment and Ethical Pen-Testing</div>
-            <h1>Identify Vulnerabilities Before Attackers Do</h1>
+            <h1>Find Security Weaknesses Before Attackers Do</h1>
             <p class="lede">
-              KryptNet helps verified teams run professional vulnerability assessment and ethical
-              pen-testing with clear reporting, accountability, and remediation direction.
+              KryptScan is a professional vulnerability assessment and ethical penetration testing
+              platform developed by KryptNet LLC to help businesses, MSPs, and IT professionals
+              identify, understand, and address security weaknesses before they can be exploited.
             </p>
             <p class="welcome-copy">
-              Register once, verify your email, choose a service, and receive a client-ready PDF
-              report after testing.
+              Assess your websites, networks, APIs, cloud environments, and IT infrastructure from
+              one secure platform. KryptScan transforms technical findings into prioritized risks,
+              practical remediation guidance, AI-assisted analysis, and professional client-ready
+              reports.
+            </p>
+            <div class="hero-actions">
+              <button type="button" data-auth-mode="signup">Start Vulnerability Assessment</button>
+              <button type="button" class="ghost dark-ghost" data-auth-mode="signup">Ethical Pen-Testing</button>
+            </div>
+            <p class="trust-note">
+              Authorized security testing only. Account verification and target authorization are
+              required before assessments begin.
             </p>
             <div class="hero-statement-grid" aria-label="Security outcomes">
-              <span>Verified users only</span>
-              <span>Full PDF reporting</span>
-              <span>Scanner-backed testing</span>
-              <span>AI-assisted prioritization</span>
+              <span>Risk scoring and remediation guidance</span>
+              <span>Professional PDF reports</span>
+              <span>Scanner-backed technical evidence</span>
+              <span>AI-assisted vulnerability explanation</span>
             </div>
           </div>
 
@@ -48,98 +71,192 @@
             <figure class="dashboard-preview" aria-label="Cybersecurity vulnerability dashboard preview">
               <img src="/static/images/kryptscan-dashboard-preview.png" alt="KryptScan dashboard preview with colorful scan metrics and threat graphs" />
             </figure>
-
-            <article id="account-entry" class="email-gate account-console" aria-labelledby="account-console-title">
-              <div class="eyebrow">Secure Client Access</div>
-              <h2 id="account-console-title">Create your KryptNet account.</h2>
-              <form id="registration-form" class="stack">
-                <div class="form-grid compact">
-                  <label>
-                    <span>Full name</span>
-                    <input id="register-name-input" type="text" placeholder="Jane Doe" required />
-                  </label>
-                  <label>
-                    <span>Email</span>
-                    <input id="register-email-input" type="email" placeholder="security@example.com" required />
-                  </label>
-                  <label>
-                    <span>Password</span>
-                    <input id="register-password-input" type="password" placeholder="12+ characters" minlength="12" required />
-                  </label>
-                  <label>
-                    <span>Confirm password</span>
-                    <input id="register-password-confirm-input" type="password" placeholder="Confirm password" minlength="12" required />
-                  </label>
-                  <label>
-                    <span>Title</span>
-                    <input id="register-title-input" type="text" placeholder="Security Manager" required />
-                  </label>
-                  <label>
-                    <span>Role</span>
-                    <input id="register-role-input" type="text" placeholder="IT professional, MSP owner, consultant" required />
-                  </label>
-                  <label>
-                    <span>Company</span>
-                    <input id="register-company-input" type="text" placeholder="Example Company" required />
-                  </label>
-                  <label>
-                    <span>Phone number</span>
-                    <input id="register-phone-input" type="tel" placeholder="+1 555 010 1234" required />
-                  </label>
-                </div>
-                <label class="check-option compact-check">
-                  <input id="register-show-password-input" type="checkbox" />
-                  <span>Show password</span>
-                </label>
-                <label>
-                  <span>Company address</span>
-                  <input id="register-address-input" type="text" placeholder="Street, city, state, country" required />
-                </label>
-                <label>
-                  <span>Date of birth <small>optional</small></span>
-                  <input id="register-dob-input" type="date" />
-                </label>
-                <label>
-                  <span>Reason for testing</span>
-                  <textarea id="register-reason-input" placeholder="Briefly describe why you need vulnerability assessment or ethical pen-testing." required></textarea>
-                </label>
-                <label class="check-option">
-                  <input id="register-data-protection-input" type="checkbox" required />
-                  <span>I accept KryptNet's data protection agreement for secure handling of my registration, assessment, and report information.</span>
-                </label>
-                <label class="check-option">
-                  <input id="register-safe-use-input" type="checkbox" required />
-                  <span>I confirm I will only test systems I own or am authorized to test.</span>
-                </label>
-                <button id="registration-submit-button" type="submit">Submit</button>
-              </form>
-              <div id="auth-status" class="status-card neutral">
-                Register with your real details. A verification code will be sent to the email used here.
-              </div>
-
-              <div class="login-divider"><span>Returning user</span></div>
-              <form id="login-form" class="stack login-stack">
-                <label>
-                  <span>Email</span>
-                  <input id="login-email-input" type="email" placeholder="security@example.com" required />
-                </label>
-                <label>
-                  <span>Password</span>
-                  <input id="login-password-input" type="password" placeholder="Your password" required />
-                </label>
-                <label class="check-option compact-check">
-                  <input id="login-show-password-input" type="checkbox" />
-                  <span>Show password</span>
-                </label>
-                <div class="auth-actions">
-                  <button id="login-submit-button" type="submit">Log In</button>
-                  <button id="forgot-password-button" type="button" class="ghost">Reset Password</button>
-                </div>
-              </form>
-            </article>
           </div>
         </article>
 
+        <section id="platform" class="landing-band platform-band">
+          <div class="section-head compact-head">
+            <div>
+              <div class="eyebrow">Platform</div>
+              <h2>Choose How You Want to Assess Your Security</h2>
+            </div>
+            <p class="inline-copy">
+              Start with an authorized vulnerability assessment, then move into deeper ethical
+              pen-testing when you have a defined scope, approval, and testing window.
+            </p>
+          </div>
+          <div class="service-grid">
+            <article id="vulnerability-assessment" class="service-card">
+              <span class="service-icon">VA</span>
+              <h3>Vulnerability Assessment</h3>
+              <p>Scan domains, IPs, websites, APIs, TLS posture, exposed services, and known CVE indicators.</p>
+              <button type="button" data-auth-mode="signup">Start Vulnerability Assessment</button>
+            </article>
+            <article id="ethical-pentesting" class="service-card">
+              <span class="service-icon danger">PT</span>
+              <h3>Ethical Penetration Testing</h3>
+              <p>Perform authorized deeper testing with scope notes, rules of engagement, evidence, and report review.</p>
+              <button type="button" class="ghost" data-auth-mode="signup">Request Pen-Testing</button>
+            </article>
+          </div>
+        </section>
+
+        <section id="about" class="landing-band">
+          <div class="section-head compact-head">
+            <div>
+              <div class="eyebrow">Remediation Workflow</div>
+              <h2>From Detection to Remediation</h2>
+            </div>
+          </div>
+          <div class="benefit-grid">
+            <article><strong>Verified targets</strong><span>Authorization checks before scans begin.</span></article>
+            <article><strong>Multi-tool evidence</strong><span>Findings normalized from network, web, TLS, DNS, and supply-chain tools.</span></article>
+            <article><strong>Risk scoring</strong><span>Clear severity, confidence, and business impact indicators.</span></article>
+            <article><strong>AI analysis</strong><span>Plain-language vulnerability explanations and mitigation guidance.</span></article>
+            <article><strong>Client reports</strong><span>Professional PDF output for business and technical audiences.</span></article>
+            <article><strong>Remediation queue</strong><span>Prioritized next steps for patching and validation.</span></article>
+          </div>
+        </section>
+
+        <section class="landing-split auth-built-in">
+          <div class="risk-callout">
+            <div class="eyebrow">Responsible Use</div>
+            <h2>Security Testing With Authorization Built In</h2>
+            <p>
+              KryptScan is designed for legitimate defensive work. Users verify their account,
+              confirm ownership or written authorization, define the scope, and receive reports
+              that support accountable remediation.
+            </p>
+          </div>
+          <div class="coverage-panel">
+            <div class="process-grid">
+              <article><span>01</span><strong>Create account</strong><p>Register with a verified business email.</p></article>
+              <article><span>02</span><strong>Confirm authorization</strong><p>Approve only domains, IPs, APIs, or systems you own or are permitted to test.</p></article>
+              <article><span>03</span><strong>Run assessment</strong><p>Launch scanner-backed testing and monitor progress.</p></article>
+              <article><span>04</span><strong>Receive report</strong><p>Review findings, remediation guidance, AI notes, and PDF evidence.</p></article>
+            </div>
+          </div>
+        </section>
+
+        <section id="reports" class="landing-band dashboard-showcase">
+          <div class="section-head compact-head">
+            <div>
+              <div class="eyebrow">Reports</div>
+              <h2>See Your Security Posture Clearly</h2>
+            </div>
+            <p class="inline-copy">
+              Executive risk views, severity graphs, tool evidence, remediation queues, and
+              downloadable client-ready reports keep technical work understandable.
+            </p>
+          </div>
+          <figure class="dashboard-preview wide-preview" aria-label="KryptScan report dashboard preview">
+            <img src="/static/images/kryptscan-dashboard-preview.png" alt="KryptScan dashboard with threat charts, scan metrics, and report panels" />
+          </figure>
+        </section>
+
+        <section id="support" class="closing-band">
+          <div>
+            <div class="eyebrow">Ready When You Are</div>
+            <h2>Start with a verified assessment.</h2>
+            <p>Sign up, verify your email, confirm authorization, and begin testing from a clean secure workflow.</p>
+          </div>
+          <button type="button" data-auth-mode="signup">Create KryptScan Account</button>
+        </section>
+
+        <footer class="site-footer">
+          <img src="/static/images/kryptscan-logo.png" alt="KryptScan" />
+          <nav aria-label="Footer links">
+            <a href="#platform">Platform</a>
+            <a href="#reports">Reports</a>
+            <a href="#support">Support</a>
+          </nav>
+          <p>Copyright 2026 KryptNet LLC. Responsible authorized security testing only.</p>
+        </footer>
+      </section>
+
+      <section id="auth-modal" class="auth-modal hidden" aria-hidden="true">
+        <button class="auth-backdrop" type="button" data-auth-close aria-label="Close account access"></button>
+        <article class="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+          <button id="auth-close-button" class="auth-close" type="button" aria-label="Close account access">×</button>
+
+          <div id="signup-panel" class="auth-mode-panel">
+            <div class="eyebrow">Secure Client Access</div>
+            <h2 id="auth-dialog-title">Create your KryptScan account.</h2>
+            <p class="inline-copy">Verify your email before launching vulnerability assessment or ethical pen-testing.</p>
+            <form id="registration-form" class="stack">
+              <div class="form-grid compact">
+                <label>
+                  <span>Full Name</span>
+                  <input id="register-name-input" type="text" placeholder="Jane Doe" required />
+                </label>
+                <label>
+                  <span>Company/Organization</span>
+                  <input id="register-company-input" type="text" placeholder="Example Company" required />
+                </label>
+                <label>
+                  <span>Business Email</span>
+                  <input id="register-email-input" type="email" placeholder="security@example.com" required />
+                </label>
+                <label>
+                  <span>Password</span>
+                  <input id="register-password-input" type="password" placeholder="12+ characters" minlength="12" required />
+                </label>
+                <label>
+                  <span>Confirm Password</span>
+                  <input id="register-password-confirm-input" type="password" placeholder="Confirm password" minlength="12" required />
+                </label>
+              </div>
+              <input id="register-title-input" type="hidden" value="Security contact" />
+              <input id="register-role-input" type="hidden" value="IT professional" />
+              <input id="register-phone-input" type="hidden" value="0000000" />
+              <input id="register-address-input" type="hidden" value="Provided during report intake" />
+              <input id="register-dob-input" type="hidden" value="" />
+              <textarea id="register-reason-input" class="hidden">Initial KryptScan account registration for authorized vulnerability assessment or ethical penetration testing.</textarea>
+              <label class="check-option compact-check">
+                <input id="register-show-password-input" type="checkbox" />
+                <span>Show password</span>
+              </label>
+              <label class="check-option">
+                <input id="register-data-protection-input" type="checkbox" required />
+                <span>I accept KryptNet's data protection agreement for secure handling of my registration, assessment, and report information.</span>
+              </label>
+              <label class="check-option">
+                <input id="register-safe-use-input" type="checkbox" required />
+                <span>I confirm I will only test systems I own or am authorized to test.</span>
+              </label>
+              <button id="registration-submit-button" type="submit">Create Account</button>
+            </form>
+            <p class="auth-switch">Already have an account? <button id="switch-to-signin-button" type="button">Sign in</button></p>
+          </div>
+
+          <div id="signin-panel" class="auth-mode-panel hidden">
+            <div class="eyebrow">Returning User</div>
+            <h2>Sign in to KryptScan.</h2>
+            <form id="login-form" class="stack login-stack">
+              <label>
+                <span>Email</span>
+                <input id="login-email-input" type="email" placeholder="security@example.com" required />
+              </label>
+              <label>
+                <span>Password</span>
+                <input id="login-password-input" type="password" placeholder="Your password" required />
+              </label>
+              <label class="check-option compact-check">
+                <input id="login-show-password-input" type="checkbox" />
+                <span>Show Password</span>
+              </label>
+              <div class="auth-actions">
+                <button id="login-submit-button" type="submit">Sign In</button>
+                <button id="forgot-password-button" type="button" class="ghost">Forgot Password</button>
+              </div>
+            </form>
+            <p class="auth-switch">Don't have a KryptScan account? <button id="switch-to-signup-button" type="button">Create one</button></p>
+          </div>
+
+          <div id="auth-status" class="status-card neutral">
+            Register or sign in to continue.
+          </div>
+        </article>
       </section>
 
       <section id="verification-page" class="customer-gate hidden">

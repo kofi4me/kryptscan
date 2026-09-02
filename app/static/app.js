@@ -12,6 +12,18 @@ const state = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    button.addEventListener("click", () => openAuthModal(button.dataset.authMode || "signup"));
+  });
+  document.querySelectorAll("[data-auth-close]").forEach((button) => {
+    button.addEventListener("click", closeAuthModal);
+  });
+  document.getElementById("auth-close-button")?.addEventListener("click", closeAuthModal);
+  document.getElementById("switch-to-signin-button")?.addEventListener("click", () => openAuthModal("signin"));
+  document.getElementById("switch-to-signup-button")?.addEventListener("click", () => openAuthModal("signup"));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeAuthModal();
+  });
   document
     .getElementById("verify-code-form")
     .addEventListener("submit", handleVerifyCode);
@@ -139,10 +151,39 @@ async function fetchJson(url, options = {}, retryOnCsrf = true) {
 }
 
 function showOnly(sectionId) {
+  if (sectionId !== "landing-page") closeAuthModal();
   ["landing-page", "verification-page", "password-reset-page", "tool-choice-page", "dashboard"].forEach((id) => {
     const element = document.getElementById(id);
     if (element) element.classList.toggle("hidden", id !== sectionId);
   });
+}
+
+function openAuthModal(mode = "signup") {
+  const modal = document.getElementById("auth-modal");
+  const signupPanel = document.getElementById("signup-panel");
+  const signinPanel = document.getElementById("signin-panel");
+  if (!modal || !signupPanel || !signinPanel) return;
+
+  const signinMode = mode === "signin";
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  signupPanel.classList.toggle("hidden", signinMode);
+  signinPanel.classList.toggle("hidden", !signinMode);
+  setStatus("auth-status", signinMode ? "Sign in to continue to your KryptScan workspace." : "Create an account to start authorized security testing.", "neutral");
+
+  const firstInput = signinMode
+    ? document.getElementById("login-email-input")
+    : document.getElementById("register-name-input");
+  window.setTimeout(() => firstInput?.focus(), 50);
+}
+
+function closeAuthModal() {
+  const modal = document.getElementById("auth-modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
 }
 
 function showVerificationPage() {
