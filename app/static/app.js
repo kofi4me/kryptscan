@@ -1227,8 +1227,8 @@ function renderReportCockpit(report, activeScan) {
   ];
   document.getElementById("report-kpi-grid").innerHTML = kpis
     .map(
-      ([label, value, helper]) => `
-        <article class="report-kpi">
+      ([label, value, helper], index) => `
+        <article class="report-kpi report-kpi-${index + 1}">
           <span>${escapeHtml(label)}</span>
           <strong>${escapeHtml(value)}</strong>
           <small>${escapeHtml(helper)}</small>
@@ -1292,16 +1292,17 @@ function renderBars(elementId, items) {
   const element = document.getElementById(elementId);
   const max = Math.max(...items.map((item) => Number(item.value || 0)), 1);
   element.innerHTML = items
-    .map((item) => {
+    .map((item, index) => {
       const width = Math.max(8, (Number(item.value || 0) / max) * 100);
+      const value = Number(item.value || 0);
       return `
-        <div class="bar-row">
+        <div class="bar-row chart-metric-row">
           <div class="bar-meta">
-            <span>${escapeHtml(item.label)}</span>
-            <span>${item.value}</span>
+            <span><i style="background:${item.color || "#4fd1c5"};"></i>${escapeHtml(item.label)}</span>
+            <strong>${value}</strong>
           </div>
           <div class="bar-track">
-            <div class="bar-fill" style="width: ${width}%; background: ${item.color || "#4fd1c5"};"></div>
+            <div class="bar-fill" style="width: ${width}%; --bar-color: ${item.color || "#4fd1c5"}; --bar-delay: ${index * 80}ms;"></div>
           </div>
         </div>
       `;
@@ -1335,20 +1336,29 @@ function renderTrend(elementId, points) {
     <svg viewBox="0 0 ${width} ${height}" fill="none" aria-label="Risk trend">
       <defs>
         <linearGradient id="riskTrendFill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stop-color="rgba(255,122,69,0.46)" />
-          <stop offset="100%" stop-color="rgba(47,99,255,0.02)" />
+          <stop offset="0%" stop-color="rgba(239,68,68,0.52)" />
+          <stop offset="48%" stop-color="rgba(37,99,235,0.22)" />
+          <stop offset="100%" stop-color="rgba(20,184,166,0.04)" />
         </linearGradient>
+        <filter id="riskTrendGlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="3" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
-      <path d="M ${padding} ${padding} H ${width - padding}" stroke="rgba(168,196,255,0.12)" />
-      <path d="M ${padding} ${height / 2} H ${width - padding}" stroke="rgba(168,196,255,0.12)" />
-      <path d="M ${padding} ${height - padding} H ${width - padding}" stroke="rgba(168,196,255,0.18)" />
+      <rect x="0" y="0" width="${width}" height="${height}" rx="18" fill="rgba(3,7,18,0.42)" />
+      <path d="M ${padding} ${padding} H ${width - padding}" stroke="rgba(168,196,255,0.14)" />
+      <path d="M ${padding} ${height / 2} H ${width - padding}" stroke="rgba(168,196,255,0.14)" />
+      <path d="M ${padding} ${height - padding} H ${width - padding}" stroke="rgba(168,196,255,0.2)" />
       ${areaPath ? `<path d="${areaPath}" fill="url(#riskTrendFill)" />` : ""}
-      <polyline points="${polyline}" stroke="#73ccff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+      <polyline points="${polyline}" stroke="#60a5fa" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" filter="url(#riskTrendGlow)" />
       ${points
         .map((point, index) => {
           const x = padding + step * index;
           const y = height - padding - ((Number(point.value || 0) / max) * (height - padding * 2));
-          return `<circle cx="${x}" cy="${y}" r="5" fill="#ff7a45" stroke="#0b1322" stroke-width="2" />`;
+          return `<circle cx="${x}" cy="${y}" r="6" fill="#f97316" stroke="#020617" stroke-width="3" />`;
         })
         .join("")}
     </svg>
