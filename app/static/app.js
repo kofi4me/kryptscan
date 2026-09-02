@@ -56,6 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-choice-mode]").forEach((button) => {
     button.addEventListener("click", () => openSelectedTool(button.dataset.choiceMode));
   });
+  initDashboardMockup();
   ensureCsrfCookie().then(() => loadDashboard(false, { showChoiceWhenAuthenticated: true }));
 });
 
@@ -184,6 +185,53 @@ function closeAuthModal() {
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
   document.body.classList.remove("modal-open");
+}
+
+function initDashboardMockup() {
+  const counters = Array.from(document.querySelectorAll("[data-mock-counter]"));
+  if (!counters.length) return;
+
+  const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const setFinalValues = () => counters.forEach((counter) => {
+    counter.textContent = counter.dataset.mockCounter || "0";
+  });
+  if (motionQuery.matches) {
+    setFinalValues();
+    return;
+  }
+
+  const formatMockValue = (value) => Math.max(0, Math.round(value)).toLocaleString();
+  const animateCounter = (counter, from, to, duration = 1800) => {
+    const start = performance.now();
+    const tick = (now) => {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      counter.textContent = formatMockValue(from + ((to - from) * eased));
+      if (progress < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+
+  counters.forEach((counter) => {
+    const base = Number(counter.dataset.mockCounter || 0);
+    counter.dataset.mockCurrent = "0";
+    animateCounter(counter, 0, base, 1900 + Math.min(base, 900));
+    window.setTimeout(() => {
+      counter.dataset.mockCurrent = String(base);
+    }, 2900);
+  });
+
+  window.setInterval(() => {
+    counters.forEach((counter, index) => {
+      const base = Number(counter.dataset.mockCounter || 0);
+      const current = Number(counter.dataset.mockCurrent || base);
+      const variance = Math.max(1, Math.round(base * 0.025));
+      const direction = index % 2 === 0 ? 1 : -1;
+      const next = base + (direction * (1 + Math.round(Math.random() * variance)));
+      counter.dataset.mockCurrent = String(next);
+      animateCounter(counter, current, next, 900);
+    });
+  }, 6200);
 }
 
 function showVerificationPage() {
