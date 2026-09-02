@@ -68,7 +68,7 @@ body {
 .masthead {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 1.4rem 2rem 0;
+  padding: 1rem 2rem 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -84,12 +84,12 @@ body {
 
 .brand-logo {
   display: block;
-  width: clamp(190px, 24vw, 340px);
+  width: clamp(118px, 12vw, 172px);
   height: auto;
-  max-height: 92px;
+  max-height: 54px;
   object-fit: contain;
   object-position: left center;
-  filter: drop-shadow(0 18px 30px rgba(47, 99, 255, 0.22));
+  filter: drop-shadow(0 10px 18px rgba(47, 99, 255, 0.18));
 }
 
 .brand-mark {
@@ -2004,8 +2004,8 @@ textarea {
   }
 
   .brand-logo {
-    width: min(320px, 78vw);
-    max-height: 86px;
+    width: min(160px, 46vw);
+    max-height: 52px;
   }
 
   h1 {
@@ -2058,8 +2058,8 @@ textarea {
   }
 
   .brand-logo {
-    width: min(270px, 86vw);
-    max-height: 74px;
+    width: min(148px, 54vw);
+    max-height: 48px;
   }
 
   .scan-actions {
