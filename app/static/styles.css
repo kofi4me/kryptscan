@@ -392,6 +392,11 @@ h4 {
   object-position: center;
 }
 
+.animated-dashboard-preview img {
+  filter: saturate(1.08) contrast(0.96) brightness(0.58) blur(1px);
+  transform: scale(1.012);
+}
+
 .mockup-overlay {
   position: absolute;
   inset: 0;
