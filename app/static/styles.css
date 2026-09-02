@@ -255,6 +255,12 @@ h4 {
   min-height: calc(100vh - 98px);
 }
 
+.landing-page > .landing-band,
+.landing-page > .landing-split,
+.landing-page > .closing-band {
+  display: none !important;
+}
+
 .landing-hero {
   min-height: 0;
   display: grid;
