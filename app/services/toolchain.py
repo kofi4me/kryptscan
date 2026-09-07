@@ -60,7 +60,7 @@ ASSESSMENT_PROFILES = [
     {
         "id": "ethical_pentesting",
         "name": "Ethical Pen-Testing",
-        "summary": "Full-stack ethical testing workflow for verified, paid, authorized targets.",
+        "summary": "Full-stack ethical testing workflow for verified, authorized targets with approved scope.",
         "categories": ["web", "API", "network", "identity", "cloud", "manual evidence", "AI reporting"],
         "requires_engagement": False,
     },

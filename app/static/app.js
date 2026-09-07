@@ -309,7 +309,7 @@ function selectAssessmentMode(mode) {
   if (subtitle && state.dashboard) {
     subtitle.textContent =
       mode === "ethical_pentesting"
-        ? `${state.dashboard.user.email} verified for ${state.dashboard.organization.domain}. Ethical Pen-Testing is paid-only and uses the approved target and full-stack testing tools.`
+        ? `${state.dashboard.user.email} verified for ${state.dashboard.organization.domain}. Ethical Pen-Testing uses the approved target, rules of engagement, and full-stack testing tools.`
         : `${state.dashboard.user.email} verified for ${state.dashboard.organization.domain}. Run a full vulnerability assessment for an authorized asset and receive a PDF report.`;
   }
   if (state.dashboard) {

@@ -142,7 +142,11 @@ def _assert_secure_config() -> None:
         raise RuntimeError("Set APP_SECRET to a strong unique value before running in production.")
     if settings.app_env in {"production", "prod"} and settings.payment_demo_mode:
         raise RuntimeError("PAYMENT_DEMO_MODE must be false in production.")
-    if settings.app_env in {"production", "prod"} and not settings.kryptnet_payment_webhook_secret:
+    if (
+        settings.app_env in {"production", "prod"}
+        and settings.payment_required
+        and not settings.kryptnet_payment_webhook_secret
+    ):
         raise RuntimeError("Set KRYPTNET_PAYMENT_WEBHOOK_SECRET before running in production.")
 
 
@@ -863,11 +867,13 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
     job_started = time.monotonic()
     user = auth_service.get_user_by_id(user_id)
     if user is None:
+        logger.warning("scan job abandoned scan_id=%s reason=user_not_found user_id=%s", scan_id, user_id)
         return
 
     with get_connection() as connection:
         scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
         if scan is None:
+            logger.warning("scan job abandoned scan_id=%s reason=scan_not_found user_id=%s", scan_id, user_id)
             return
         connection.execute(
             """
@@ -884,6 +890,15 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
         _audit(connection, user, "scan.started", {"scan_id": scan_id, "backend": scan["scanner_backend"]})
         scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
 
+    logger.info(
+        "scan started scan_id=%s user_id=%s org_id=%s target=%s backend=%s mode=%s",
+        scan_id,
+        user["id"],
+        user["organization_id"],
+        scan["normalized_target"],
+        scan["scanner_backend"],
+        scan["assessment_mode"],
+    )
     _update_scan_progress(scan_id, user["organization_id"], 20, "Validating scope, scan profile, and scanner backend.")
     provider = get_scanner_provider(settings, scan["scanner_backend"])
     try:
@@ -902,6 +917,7 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
         except TypeError:
             scheduled = provider.schedule(scan["normalized_target"], scan["asset_type"])
     except Exception as exc:
+        logger.exception("scan scheduling failed scan_id=%s target=%s backend=%s", scan_id, scan["normalized_target"], scan["scanner_backend"])
         with get_connection() as connection:
             connection.execute(
                 """
@@ -918,6 +934,7 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
         return
 
     if scheduled.report is not None:
+        logger.info("scan worker returned immediate report scan_id=%s backend=%s", scan_id, scheduled.backend)
         minimum_seconds = settings.scanner_min_full_scan_seconds if (scan["scan_tier"] or "full_scan") == "full_scan" else 0
         elapsed = time.monotonic() - job_started
         if minimum_seconds > 0 and elapsed < minimum_seconds:
@@ -938,6 +955,7 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
         )
         with get_connection() as connection:
             _audit(connection, user, "scan.completed", {"scan_id": scan_id, "backend": scheduled.backend})
+        logger.info("scan completed scan_id=%s backend=%s", scan_id, scheduled.backend)
         return
 
     with get_connection() as connection:
@@ -971,6 +989,13 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
             {"scan_id": scan_id, "backend": scheduled.backend, "task_id": scheduled.external_task_id},
         )
 
+    logger.info(
+        "scan external task started scan_id=%s backend=%s task_id=%s status=%s",
+        scan_id,
+        scheduled.backend,
+        scheduled.external_task_id,
+        scheduled.status,
+    )
     minimum_seconds = settings.scanner_min_full_scan_seconds if (scan["scan_tier"] or "full_scan") == "full_scan" else 0
     deadline = time.monotonic() + max(settings.scanner_worker_timeout_seconds, minimum_seconds + 120)
     while time.monotonic() < deadline:
@@ -984,6 +1009,7 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
                 scheduled.external_report_id,
             )
         except Exception as exc:
+            logger.exception("scan refresh failed scan_id=%s backend=%s task_id=%s", scan_id, scheduled.backend, scheduled.external_task_id)
             with get_connection() as connection:
                 connection.execute(
                     """
@@ -1017,9 +1043,11 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
             )
             with get_connection() as connection:
                 _audit(connection, user, "scan.completed", {"scan_id": scan_id, "backend": scheduled.backend})
+            logger.info("scan completed scan_id=%s backend=%s", scan_id, scheduled.backend)
             return
 
         if refreshed.status == "failed":
+            logger.warning("scan failed scan_id=%s backend=%s message=%s", scan_id, scheduled.backend, refreshed.message)
             with get_connection() as connection:
                 connection.execute(
                     """
@@ -1056,6 +1084,7 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
             ),
         )
         _audit(connection, user, "scan.failed", {"scan_id": scan_id, "error": "worker timeout"})
+    logger.error("scan timed out scan_id=%s backend=%s task_id=%s", scan_id, scheduled.backend, scheduled.external_task_id)
 
 
 def get_current_user(request: Request) -> Row:
@@ -1574,6 +1603,8 @@ def create_payment_intent(
     user: Row = Depends(get_current_user),
 ) -> dict:
     _rate_limit(request, "payments.intent", limit=20, window_seconds=60)
+    if not settings.payment_required:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Payment is disabled for this launch phase.")
     _require_owner(user)
     _require_completed_registration(user)
     plan = _plan_details(payload.plan)
@@ -1594,6 +1625,8 @@ def create_payment_checkout(
     user: Row = Depends(get_current_user),
 ) -> dict:
     _rate_limit(request, "payments.checkout", limit=10, window_seconds=60)
+    if not settings.payment_required:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Payment is disabled for this launch phase.")
     _require_owner(user)
     _require_completed_registration(user)
     plan = _plan_details(payload.plan)
@@ -1682,6 +1715,8 @@ def create_payment_checkout(
 @app.post("/api/payments/webhook/kryptnet")
 def kryptnet_payment_webhook(request: Request, payload: PaymentWebhookRequest) -> dict:
     _rate_limit(request, "payments.webhook", limit=120, window_seconds=60)
+    if not settings.payment_required:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Payment is disabled for this launch phase.")
     if not settings.kryptnet_payment_webhook_secret:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Payment webhook is not configured.")
     supplied_secret = request.headers.get("x-kryptnet-webhook-secret", "")
@@ -1888,6 +1923,8 @@ def client_portal(user: Row = Depends(get_current_user)) -> ClientPortalResponse
 @app.post("/api/billing/mock-activate")
 def activate_mock_billing(request: Request, user: Row = Depends(get_current_user)) -> dict:
     _rate_limit(request, "billing.mock_activate", limit=5, window_seconds=60)
+    if not settings.payment_demo_mode:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Mock billing is disabled.")
     _require_owner(user)
     expires_at = (utcnow() + timedelta(days=30)).isoformat()
     with get_connection() as connection:
@@ -2314,6 +2351,16 @@ def create_scan(
             },
         )
 
+    logger.info(
+        "scan created scan_id=%s user_id=%s org_id=%s target=%s mode=%s backend=%s payment_required=%s",
+        scan_id,
+        user["id"],
+        user["organization_id"],
+        authorization["normalized_target"],
+        assessment_mode,
+        selected_backend,
+        settings.payment_required,
+    )
     background_tasks.add_task(_run_scan_job, scan_id, int(user["id"]))
     return _summary_from_row(scan)
 
