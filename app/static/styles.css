@@ -276,18 +276,41 @@ h4 {
 }
 
 .landing-hero h1 {
-  max-width: 15ch;
-  font-size: clamp(2.8rem, 5vw, 5.8rem);
-  line-height: 0.98;
+  max-width: none;
+  margin-bottom: 0.72rem;
+  color: transparent;
+  background: linear-gradient(90deg, #ffffff 0%, #4d7dff 42%, #ff3f42 88%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  font-size: 16px;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  text-shadow: 0 0 22px rgba(47, 99, 255, 0.28);
 }
 
 .landing-hero .lede {
   max-width: 60ch;
-  font-size: clamp(1.04rem, 1.35vw, 1.2rem);
+  margin-top: 0;
+  color: rgba(247, 249, 252, 0.86);
+  font-size: 13px;
+  line-height: 1.72;
+}
+
+.landing-hero .welcome-copy {
+  max-width: 64ch;
+  color: rgba(247, 249, 252, 0.8);
+  font-size: 13px;
+  line-height: 1.72;
+}
+
+.landing-hero .welcome-copy strong,
+.landing-hero .trust-note strong {
+  color: #ffffff;
 }
 
 .landing-hero-copy {
-  max-width: 760px;
+  max-width: 650px;
 }
 
 .landing-side {
@@ -300,7 +323,7 @@ h4 {
   align-items: center;
   gap: 0.8rem;
   flex-wrap: wrap;
-  margin: 1.5rem 0 0;
+  margin: 1.15rem 0 0;
 }
 
 .hero-actions button {
@@ -315,10 +338,11 @@ h4 {
 
 .trust-note {
   max-width: 62ch;
-  margin: 1rem 0 0;
-  color: rgba(241, 246, 255, 0.72);
-  line-height: 1.65;
-  font-weight: 700;
+  margin: 0.82rem 0 0;
+  color: #ffffff;
+  font-size: 13px;
+  line-height: 1.72;
+  font-weight: 900;
 }
 
 .hero-statement-grid {
@@ -2910,10 +2934,6 @@ textarea {
     justify-content: flex-start;
     overflow-x: auto;
     padding-bottom: 0.2rem;
-  }
-
-  .landing-hero h1 {
-    max-width: 15ch;
   }
 
   .email-gate {
