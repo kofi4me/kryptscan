@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import ipaddress
 import re
 import secrets
@@ -68,6 +69,10 @@ from app.services.pdf_report import write_pdf_report
 from app.services.reporting import build_assessment_report
 from app.services.scanners import get_scanner_provider, greenbone_is_available, resolve_backend_name
 from app.services.toolchain import get_assessment_profiles, get_ethical_pentest_toolchain
+
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+logger = logging.getLogger("kryptscan.main")
 
 
 settings = get_settings()
@@ -1246,8 +1251,10 @@ def request_code(request: Request, payload: AuthRequest) -> dict:
     try:
         return auth_service.request_code(payload.email)
     except ValueError as exc:
+        logger.warning("verification code request rejected email=%s error=%s", payload.email, exc)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception("verification code request failed email=%s", payload.email)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Verification email could not be sent. Check SMTP settings and try Resend code.",
@@ -1260,8 +1267,10 @@ def register(request: Request, payload: RegistrationRequest) -> dict:
     try:
         result = auth_service.register_account(payload)
     except ValueError as exc:
+        logger.warning("registration rejected email=%s error=%s", payload.email, exc)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception("registration failed while sending verification email=%s", payload.email)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Registration was saved, but the verification email could not be sent. Use Resend code or check SMTP settings.",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from sqlite3 import Row
 
 from app.db import get_connection
@@ -12,6 +13,9 @@ from app.security import (
     utcnow,
     verify_password,
 )
+
+
+logger = logging.getLogger("kryptscan.auth")
 
 
 PUBLIC_EMAIL_DOMAINS = {
@@ -75,6 +79,7 @@ class AuthService:
 
     def request_code(self, email: str) -> dict:
         normalized, domain = _email_parts(email)
+        logger.info("verification code requested email=%s domain=%s delivery=%s", normalized, domain, self.settings.email_delivery)
         code = generate_one_time_code()
         code_hash = hash_verification_code(self.settings.app_secret, normalized, code)
         created_at = utcnow()
@@ -112,6 +117,7 @@ class AuthService:
             )
 
         self.email_sender.send_verification_code(normalized, code, domain)
+        logger.info("verification code delivery completed email=%s domain=%s delivery=%s", normalized, domain, self.settings.email_delivery)
         return {
             "message": "Verification code sent.",
             "email": mask_email(normalized),
@@ -122,6 +128,7 @@ class AuthService:
 
     def register_account(self, payload) -> dict:
         normalized, domain = _email_parts(payload.email)
+        logger.info("registration submitted email=%s domain=%s company=%s", normalized, domain, payload.company_name.strip())
         if not payload.data_protection_accepted:
             raise ValueError("Data protection agreement acceptance is required.")
         if not payload.safe_use_accepted:
@@ -219,6 +226,7 @@ class AuthService:
                 )
             connection.execute("UPDATE organizations SET name = ? WHERE id = ?", (payload.company_name.strip(), organization["id"]))
 
+        logger.info("registration saved email=%s domain=%s", normalized, domain)
         return self.request_code(normalized)
 
     def login(self, email: str, password: str) -> Row:

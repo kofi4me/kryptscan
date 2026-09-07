@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 import smtplib
 from email.message import EmailMessage
 from email.utils import formataddr
 
 from app.config import Settings
+
+
+logger = logging.getLogger("kryptscan.email")
 
 
 class BaseEmailSender:
@@ -72,12 +76,22 @@ class SmtpEmailSender(BaseEmailSender):
         )
 
         smtp_factory = smtplib.SMTP_SSL if self.settings.smtp_use_ssl else smtplib.SMTP
+        logger.info(
+            "verification email send started recipient=%s domain=%s smtp_host=%s smtp_port=%s tls=%s ssl=%s",
+            email,
+            domain,
+            self.settings.smtp_host,
+            self.settings.smtp_port,
+            self.settings.smtp_use_tls,
+            self.settings.smtp_use_ssl,
+        )
         with smtp_factory(self.settings.smtp_host, self.settings.smtp_port, timeout=30) as smtp:
             if self.settings.smtp_use_tls and not self.settings.smtp_use_ssl:
                 smtp.starttls()
             if self.settings.smtp_username:
                 smtp.login(self.settings.smtp_username, self.settings.smtp_password)
             smtp.send_message(message)
+        logger.info("verification email sent recipient=%s domain=%s", email, domain)
 
     def send_password_reset_code(self, email: str, code: str) -> None:
         message = EmailMessage()
@@ -92,12 +106,21 @@ class SmtpEmailSender(BaseEmailSender):
         )
 
         smtp_factory = smtplib.SMTP_SSL if self.settings.smtp_use_ssl else smtplib.SMTP
+        logger.info(
+            "password reset email send started recipient=%s smtp_host=%s smtp_port=%s tls=%s ssl=%s",
+            email,
+            self.settings.smtp_host,
+            self.settings.smtp_port,
+            self.settings.smtp_use_tls,
+            self.settings.smtp_use_ssl,
+        )
         with smtp_factory(self.settings.smtp_host, self.settings.smtp_port, timeout=30) as smtp:
             if self.settings.smtp_use_tls and not self.settings.smtp_use_ssl:
                 smtp.starttls()
             if self.settings.smtp_username:
                 smtp.login(self.settings.smtp_username, self.settings.smtp_password)
             smtp.send_message(message)
+        logger.info("password reset email sent recipient=%s", email)
 
     def send_assessment_report(
         self,
@@ -126,12 +149,21 @@ class SmtpEmailSender(BaseEmailSender):
         )
 
         smtp_factory = smtplib.SMTP_SSL if self.settings.smtp_use_ssl else smtplib.SMTP
+        logger.info(
+            "assessment report email send started recipient=%s target=%s filename=%s smtp_host=%s smtp_port=%s",
+            email,
+            target,
+            pdf_filename,
+            self.settings.smtp_host,
+            self.settings.smtp_port,
+        )
         with smtp_factory(self.settings.smtp_host, self.settings.smtp_port, timeout=30) as smtp:
             if self.settings.smtp_use_tls and not self.settings.smtp_use_ssl:
                 smtp.starttls()
             if self.settings.smtp_username:
                 smtp.login(self.settings.smtp_username, self.settings.smtp_password)
             smtp.send_message(message)
+        logger.info("assessment report email sent recipient=%s target=%s filename=%s", email, target, pdf_filename)
 
 
 def get_email_sender(settings: Settings) -> BaseEmailSender:
