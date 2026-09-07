@@ -93,9 +93,9 @@ body.modal-open {
 
 .brand-logo {
   display: block;
-  width: clamp(160px, 12vw, 220px);
+  width: clamp(190px, 14vw, 260px);
   height: auto;
-  max-height: 56px;
+  max-height: 68px;
   object-fit: contain;
   object-position: left center;
   filter: drop-shadow(0 10px 18px rgba(47, 99, 255, 0.18));
@@ -2989,8 +2989,8 @@ textarea {
   }
 
   .brand-logo {
-    width: min(176px, 44vw);
-    max-height: 50px;
+    width: min(196px, 48vw);
+    max-height: 58px;
   }
 
   .nav-actions {
@@ -3064,8 +3064,8 @@ textarea {
   }
 
   .brand-logo {
-    width: min(168px, 52vw);
-    max-height: 48px;
+    width: min(188px, 54vw);
+    max-height: 56px;
   }
 
   .nav-actions {
