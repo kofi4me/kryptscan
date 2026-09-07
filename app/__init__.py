@@ -1,1 +1,1 @@
-"""Sentinel Scope application package."""
+"""KryptScan application package."""

@@ -615,7 +615,8 @@ def _staged_scan_progress(started: float, minimum_seconds: int, floor: int = 45,
 def _report_msp_details(user: Row) -> dict[str, str]:
     return {
         "MSP organization": user["organization_name"],
-        "Verified MSP domain": user["email_domain"],
+        "Verified account": user["email"],
+        "Verified account domain": user["email_domain"],
         "Report prepared by": user["email"],
         "User role": user["role"],
     }

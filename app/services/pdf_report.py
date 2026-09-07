@@ -137,7 +137,7 @@ def _build_pdf_bytes(
     owner_details: dict[str, str] | None = None,
 ) -> bytes:
     canvas = _Canvas()
-    title = "Sentinel Scope Ethical Pen-Testing" if assessment_mode in {"ethical_pentesting", "authorized_pentest"} else "Sentinel Scope Vulnerability Assessment"
+    title = "KryptScan Ethical Pen-Testing Report" if assessment_mode in {"ethical_pentesting", "authorized_pentest"} else "KryptScan Vulnerability Assessment Report"
     canvas.text(title, size=20, bold=True)
     canvas.text(target, size=15, bold=True, color=(0.18, 0.45, 0.62))
     canvas.spacer(4)
@@ -171,7 +171,25 @@ def _build_pdf_bytes(
     canvas.spacer(4)
     canvas.text(f"Overall risk score: {report.risk_score}/100", size=12, bold=True)
     canvas.text(f"Risk band: {report.risk_band}", size=12)
+    canvas.text(
+        f"Assessment coverage: {report.assessment_coverage}% - {report.assessment_coverage_status}",
+        size=12,
+        bold=True,
+        color=(0.70, 0.16, 0.16) if report.assessment_coverage_status != "Complete" else (0.10, 0.48, 0.34),
+    )
     canvas.divider()
+
+    if report.diagnostics:
+        canvas.text("Assessment Coverage & Tool Health", size=14, bold=True)
+        canvas.text(
+            "The following scanner diagnostics affected assessment coverage. These are KryptScan operational diagnostics, not customer vulnerabilities.",
+            size=10,
+            indent=8,
+        )
+        for diagnostic in report.diagnostics:
+            canvas.text(f"{diagnostic.name} [{diagnostic.status.upper()}]", size=10, bold=True, indent=8)
+            canvas.text(diagnostic.detail, size=9, indent=16, color=(0.35, 0.40, 0.45))
+        canvas.divider()
 
     if report.methodology:
         canvas.text("Methodology", size=14, bold=True)
@@ -229,12 +247,33 @@ def _build_pdf_bytes(
             [(item.label, item.value, (0.35, 0.75, 0.92)) for item in report.top_categories],
         )
 
-    canvas.text("Technical Findings", size=14, bold=True)
-    for index, finding in enumerate(report.findings, start=1):
+    vulnerability_findings = [
+        finding
+        for finding in report.findings
+        if finding.finding_type in {"VULNERABILITY", "SECURITY_MISCONFIGURATION"}
+        and finding.validation_status not in {"NOT_VULNERABLE", "SCANNER_ERROR"}
+    ]
+    exposure_findings = [
+        finding
+        for finding in report.findings
+        if finding not in vulnerability_findings
+    ]
+
+    canvas.text("Confirmed and Potential Vulnerabilities", size=14, bold=True)
+    if not vulnerability_findings:
+        canvas.text("No confirmed or potential vulnerability findings were validated from the available scanner evidence.", size=10, indent=8)
+        canvas.spacer(4)
+    for index, finding in enumerate(vulnerability_findings, start=1):
         canvas.text(
             f"{index}. {finding.title} [{finding.severity.upper()} | CVSS {finding.cvss}]",
             size=11,
             bold=True,
+        )
+        canvas.text(
+            f"Type: {finding.finding_type}  Status: {finding.validation_status}  Confidence: {finding.confidence}%",
+            size=10,
+            indent=8,
+            color=(0.35, 0.40, 0.45),
         )
         canvas.text(
             f"Host: {finding.host}  Port: {finding.port or 'n/a'}  Service: {finding.service or 'n/a'}",
@@ -244,10 +283,38 @@ def _build_pdf_bytes(
         )
         if finding.cve:
             canvas.text(f"CVE: {finding.cve}", size=10, indent=8, color=(0.35, 0.40, 0.45))
+        if finding.cwe:
+            canvas.text(f"CWE: {finding.cwe}", size=10, indent=8, color=(0.35, 0.40, 0.45))
+        if finding.cvss_vector:
+            canvas.text(f"CVSS vector: {finding.cvss_vector}", size=10, indent=8, color=(0.35, 0.40, 0.45))
+        if finding.detected_by:
+            canvas.text(f"Detected by: {', '.join(finding.detected_by)}", size=10, indent=8, color=(0.35, 0.40, 0.45))
         canvas.text(f"Description: {finding.description}", size=10, indent=8)
         canvas.text(f"Remediation: {finding.remediation}", size=10, indent=8)
         if finding.evidence:
             canvas.text(f"Evidence: {finding.evidence}", size=10, indent=8, color=(0.30, 0.37, 0.44))
+        canvas.spacer(5)
+    canvas.divider()
+
+    canvas.text("Exposures and Security Observations", size=14, bold=True)
+    if not exposure_findings:
+        canvas.text("No additional exposure or informational observations were recorded.", size=10, indent=8)
+    for index, finding in enumerate(exposure_findings, start=1):
+        canvas.text(
+            f"{index}. {finding.title} [{finding.validation_status} | {finding.finding_type}]",
+            size=11,
+            bold=True,
+        )
+        canvas.text(
+            f"Host: {finding.host}  Port: {finding.port or 'n/a'}  Service: {finding.service or 'n/a'}  Confidence: {finding.confidence}%",
+            size=10,
+            indent=8,
+            color=(0.35, 0.40, 0.45),
+        )
+        canvas.text(f"Description: {finding.description}", size=10, indent=8)
+        canvas.text(f"Recommended review: {finding.remediation}", size=10, indent=8)
+        if finding.evidence:
+            canvas.text(f"Evidence: {finding.evidence}", size=9, indent=8, color=(0.30, 0.37, 0.44))
         canvas.spacer(5)
 
     return _serialize_pdf(canvas.pages)

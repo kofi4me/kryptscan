@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import re
 
 from app.models import (
     AssessmentReport,
@@ -22,6 +23,28 @@ SEVERITY_WEIGHTS = {
     "low": 1,
     "info": 0,
 }
+SCANNER_DIAGNOSTIC_CATEGORIES = {
+    "Scanner Toolchain",
+    "Tool Execution",
+    "Tool Readiness",
+}
+NEGATIVE_EVIDENCE_PATTERNS = [
+    r"\bok\b\s*[-:]?\s*not vulnerable\b",
+    r"\bnot vulnerable\b",
+    r"\bnot affected\b",
+    r"\bno vulnerability detected\b",
+    r"\bno vulnerabilities? detected\b",
+    r"\bsafe\b",
+    r"\bpass(?:ed)?\b",
+]
+CONFIRMED_EVIDENCE_PATTERNS = [
+    r"\bvulnerable\b",
+    r"\bconfirmed\b",
+    r"\bexploit(?:able|ed)?\b",
+    r"\bdetected\b",
+    r"\baffected\b",
+]
+INCONCLUSIVE_TEST_NAMES = {"heartbleed", "robot"}
 
 
 def severity_from_cvss(cvss: float) -> str:
@@ -56,25 +79,173 @@ def _serialize_counts(counter: Counter) -> SeverityCounts:
     )
 
 
+def _tool_name(finding: Finding) -> str:
+    if ":" in finding.title:
+        return finding.title.split(":", 1)[0].strip()
+    return finding.service or finding.category or "KryptScan"
+
+
+def _has_pattern(text: str, patterns: list[str]) -> bool:
+    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
+
+
+def _is_inconclusive_named_test(text: str) -> bool:
+    lowered = text.lower()
+    return any(name in lowered for name in INCONCLUSIVE_TEST_NAMES)
+
+
+def _is_scanner_diagnostic(finding: Finding, text: str) -> bool:
+    if finding.category in SCANNER_DIAGNOSTIC_CATEGORIES:
+        return True
+    lowered = text.lower()
+    diagnostic_terms = [" api error", " error", " failed", "not installed", "timed out", "timeout", "unavailable"]
+    return finding.category in {"AI Reporting", "Assessment Quality"} and any(term in lowered for term in diagnostic_terms)
+
+
+def _service_remediation(finding: Finding) -> str:
+    service = (finding.service or "").lower()
+    port = str(finding.port or "").lower()
+    if service == "ftp" or port == "21":
+        return (
+            "Determine whether public FTP access is operationally required. If unnecessary, disable the service and "
+            "block TCP/21 at the perimeter firewall. If file transfer remains required, consider SFTP or another "
+            "encrypted transfer method, then review anonymous access, authentication controls, source restrictions, "
+            "logging, and patch status."
+        )
+    if service == "ssh" or port == "22":
+        return (
+            "Restrict administrative access to approved source networks or VPN infrastructure. Review password "
+            "authentication, root login, MFA, key management, logging, fail2ban or equivalent protection, and vendor "
+            "security updates for the detected SSH package."
+        )
+    if service in {"domain", "dns"} or port == "53":
+        return (
+            "Validate DNS recursion, zone-transfer controls, DNSSEC posture, version disclosure, logging, and relevant "
+            "vendor vulnerability advisories before treating this as a confirmed DNS vulnerability."
+        )
+    return finding.remediation
+
+
+def _validated_finding(finding: Finding) -> Finding:
+    text = " ".join(
+        item
+        for item in [finding.title, finding.description, finding.evidence or "", finding.remediation]
+        if item
+    )
+    detected_by = finding.detected_by or [_tool_name(finding)]
+    if _is_scanner_diagnostic(finding, text):
+        return finding.model_copy(
+            update={
+                "severity": "info",
+                "cvss": 0.0,
+                "finding_type": "SCANNER_ERROR",
+                "validation_status": "SCANNER_ERROR",
+                "confidence": 100,
+                "detected_by": detected_by,
+            }
+        )
+    if _has_pattern(text, NEGATIVE_EVIDENCE_PATTERNS):
+        return finding.model_copy(
+            update={
+                "severity": "info",
+                "cvss": 0.0,
+                "category": "Passed Security Test",
+                "finding_type": "INFORMATIONAL",
+                "validation_status": "NOT_VULNERABLE",
+                "confidence": 100,
+                "detected_by": detected_by,
+                "description": f"Scanner evidence indicates this test did not confirm a vulnerability. Original result: {finding.description}",
+                "remediation": "No vulnerability remediation is required from this passed test. Retain the evidence for audit context.",
+            }
+        )
+    if _is_inconclusive_named_test(text) and not _has_pattern(text, CONFIRMED_EVIDENCE_PATTERNS):
+        return finding.model_copy(
+            update={
+                "severity": "info",
+                "cvss": 0.0,
+                "finding_type": "OBSERVATION",
+                "validation_status": "INCONCLUSIVE",
+                "confidence": 20,
+                "detected_by": detected_by,
+                "description": f"The scanner referenced this test but did not provide sufficient vulnerable/not-vulnerable evidence. Original result: {finding.description}",
+                "remediation": "Manually verify the scanner output before treating this as a vulnerability.",
+            }
+        )
+    if finding.severity == "info" or finding.cvss <= 0:
+        finding_type = finding.finding_type if finding.finding_type != "VULNERABILITY" else "OBSERVATION"
+        return finding.model_copy(
+            update={
+                "finding_type": finding_type,
+                "validation_status": finding.validation_status if finding.validation_status != "POTENTIAL" else "INFORMATIONAL",
+                "confidence": max(finding.confidence, 65),
+                "detected_by": detected_by,
+                "remediation": _service_remediation(finding),
+            }
+        )
+    status = "CONFIRMED" if finding.cve or finding.cvss_vector or _has_pattern(text, CONFIRMED_EVIDENCE_PATTERNS) else "POTENTIAL"
+    confidence = 90 if status == "CONFIRMED" else 55
+    return finding.model_copy(
+        update={
+            "finding_type": finding.finding_type or "VULNERABILITY",
+            "validation_status": status,
+            "confidence": max(finding.confidence, confidence),
+            "detected_by": detected_by,
+            "remediation": _service_remediation(finding),
+        }
+    )
+
+
+def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
+    deduped: dict[tuple[str, str, str, str], Finding] = {}
+    for finding in findings:
+        key = (
+            finding.host.lower(),
+            str(finding.port or "").lower(),
+            (finding.service or "").lower(),
+            re.sub(r"[^a-z0-9]+", " ", finding.title.lower()).strip(),
+        )
+        existing = deduped.get(key)
+        if existing is None:
+            deduped[key] = finding
+            continue
+        detected_by = sorted(set(existing.detected_by + finding.detected_by))
+        stronger = max([existing, finding], key=lambda item: (SEVERITY_WEIGHTS[item.severity], item.confidence, item.cvss))
+        deduped[key] = stronger.model_copy(update={"detected_by": detected_by, "confidence": min(100, max(stronger.confidence, len(detected_by) * 20 + stronger.confidence))})
+    return list(deduped.values())
+
+
 def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentReport:
+    findings = _deduplicate_findings([_validated_finding(item) for item in findings])
     findings = sorted(
         findings,
-        key=lambda item: (SEVERITY_WEIGHTS[item.severity], item.cvss),
+        key=lambda item: (SEVERITY_WEIGHTS[item.severity], item.confidence, item.cvss),
         reverse=True,
     )
+    diagnostics = [
+        ComplianceCheck(name=item.title, status="fail", detail=item.description)
+        for item in findings
+        if item.finding_type == "SCANNER_ERROR"
+    ]
     reportable_findings = [
         item
         for item in findings
-        if item.category not in {"Scanner Toolchain", "AI Reporting", "Assessment Quality"}
+        if item.finding_type != "SCANNER_ERROR"
     ]
     actionable_findings = [
         item
         for item in reportable_findings
-        if item.severity in {"critical", "high", "medium", "low"}
+        if item.finding_type in {"VULNERABILITY", "SECURITY_MISCONFIGURATION", "EXPOSURE"}
+        and item.validation_status in {"CONFIRMED", "LIKELY", "POTENTIAL"}
+        and item.severity in {"critical", "high", "medium", "low"}
     ]
-    severity_counter = Counter(item.severity for item in findings)
+    severity_counter = Counter(item.severity for item in actionable_findings)
+    severity_counter["info"] = sum(
+        1
+        for item in reportable_findings
+        if item.severity == "info" or item.finding_type in {"OBSERVATION", "INFORMATIONAL"}
+    )
     counts = _serialize_counts(severity_counter)
-    weighted_total = sum(SEVERITY_WEIGHTS[item.severity] for item in actionable_findings)
+    weighted_total = sum(SEVERITY_WEIGHTS[item.severity] * max(item.confidence, 1) / 100 for item in actionable_findings)
     critical_high_pressure = counts.critical * 12 + counts.high * 7
     medium_pressure = min(counts.medium * 3, 18)
     low_pressure = min(counts.low, 6)
@@ -82,6 +253,10 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
     risk_score = min(100, round((average_weight * 8) + critical_high_pressure + medium_pressure + low_pressure))
     service_counter = Counter(item.service or "unknown" for item in reportable_findings)
     category_counter = Counter(item.category for item in reportable_findings)
+    expected_components = 9
+    completed_components = max(0, expected_components - len(diagnostics))
+    assessment_coverage = round((completed_components / expected_components) * 100)
+    coverage_status = "Complete" if assessment_coverage >= 90 else "Partial" if assessment_coverage >= 55 else "Limited"
 
     top_services = [
         ChartDatum(label=label, value=value)
@@ -104,9 +279,9 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
         ),
         ComplianceCheck(
             name="High-risk exposure backlog",
-            status="warn" if counts.high >= 3 else "pass",
+            status="fail" if counts.high else "pass",
             detail=(
-                f"{counts.high} high-severity issues need rapid triage."
+                f"{counts.high} high-severity issue(s) need rapid triage."
                 if counts.high
                 else "High-severity backlog is currently controlled."
             ),
@@ -158,16 +333,26 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
     ]
 
     band = _risk_band(risk_score)
-    summary = (
-        f"{target} is currently rated {band.lower()} risk with {counts.critical} critical, "
-        f"{counts.high} high, and {counts.medium} medium findings. "
-        "Priority should go to externally exposed services and vulnerabilities with a clear patch path."
-    )
+    if coverage_status != "Complete":
+        summary = (
+            f"{target} is currently rated {band.lower()} risk based on a {coverage_status.lower()} external assessment "
+            f"with {assessment_coverage}% tool coverage. KryptScan identified {counts.critical} confirmed or potential "
+            f"critical, {counts.high} high, and {counts.medium} medium vulnerability findings. Scanner diagnostics "
+            "should be reviewed before treating this as a complete representation of the target security posture."
+        )
+    else:
+        summary = (
+            f"{target} is currently rated {band.lower()} risk with {counts.critical} confirmed or potential critical, "
+            f"{counts.high} high, and {counts.medium} medium vulnerability findings. Priority should go to externally "
+            "exposed services and vulnerabilities with clear evidence, high confidence, and a practical remediation path."
+        )
 
     return AssessmentReport(
         executive_summary=summary,
         risk_score=risk_score,
         risk_band=band,
+        assessment_coverage=assessment_coverage,
+        assessment_coverage_status=coverage_status,
         severity_counts=counts,
         scope_summary=f"Assessment scope was limited to {target} and evidence collected during the approved workflow.",
         methodology=[
@@ -181,7 +366,8 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
             "Authenticated application, cloud, identity, and business logic testing require client-provided access and explicit approval.",
         ],
         scan_protocols=[],
-        findings=findings,
+        diagnostics=diagnostics,
+        findings=reportable_findings,
         compliance_checks=compliance_checks,
         remediation_plan=remediation_plan,
         top_services=top_services,

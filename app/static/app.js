@@ -1258,44 +1258,91 @@ function renderReport(report) {
     )
     .join("");
 
-  document.getElementById("findings-list").innerHTML = report.findings
-    .map(
-      (finding) => `
-        <article class="finding-card">
-          <header>
-            <div>
-              <strong>${escapeHtml(finding.title)}</strong>
-              <div class="meta-line">
-                <span>${escapeHtml(finding.category)}</span>
-                <span>${escapeHtml(finding.host)}</span>
-                <span>${escapeHtml(finding.service || "service n/a")}</span>
-                <span>${escapeHtml(finding.port || "port n/a")}</span>
-              </div>
-            </div>
-            <span class="pill ${finding.severity}">${escapeHtml(finding.severity)}</span>
-          </header>
-          <div class="finding-meter" aria-label="Finding severity score">
-            <span style="width: ${Math.min(100, Math.max(0, Number(finding.cvss || 0) * 10))}%;"></span>
+  const diagnostics = report.diagnostics || [];
+  const vulnerabilityFindings = (report.findings || []).filter(
+    (finding) =>
+      ["VULNERABILITY", "SECURITY_MISCONFIGURATION"].includes(finding.finding_type || "") &&
+      !["NOT_VULNERABLE", "SCANNER_ERROR"].includes(finding.validation_status || "")
+  );
+  const observationFindings = (report.findings || []).filter((finding) => !vulnerabilityFindings.includes(finding));
+  const renderFindingCard = (finding) => `
+    <article class="finding-card">
+      <header>
+        <div>
+          <strong>${escapeHtml(finding.title)}</strong>
+          <div class="meta-line">
+            <span>${escapeHtml(finding.category)}</span>
+            <span>${escapeHtml(finding.host)}</span>
+            <span>${escapeHtml(finding.service || "service n/a")}</span>
+            <span>${escapeHtml(finding.port || "port n/a")}</span>
           </div>
-          <div class="meta-line finding-meta">
-            <span>CVSS ${Number(finding.cvss || 0).toFixed(1)}</span>
-            <span>${escapeHtml(finding.cve || "No CVE supplied")}</span>
-          </div>
-          <p>${escapeHtml(finding.description)}</p>
-          <div class="remediation-note"><strong>Action:</strong> ${escapeHtml(finding.remediation)}</div>
-          ${finding.evidence ? `<details><summary>Evidence</summary><pre>${escapeHtml(finding.evidence)}</pre></details>` : ""}
-        </article>
-      `
-    )
-    .join("");
+        </div>
+        <span class="pill ${finding.severity}">${escapeHtml(finding.severity)}</span>
+      </header>
+      <div class="finding-meter" aria-label="Finding severity score">
+        <span style="width: ${Math.min(100, Math.max(0, Number(finding.cvss || 0) * 10))}%;"></span>
+      </div>
+      <div class="meta-line finding-meta">
+        <span>Type: ${escapeHtml(finding.finding_type || "OBSERVATION")}</span>
+        <span>Status: ${escapeHtml(finding.validation_status || "INFORMATIONAL")}</span>
+        <span>Confidence: ${Number(finding.confidence || 0)}%</span>
+        <span>${escapeHtml(finding.cve || "No CVE supplied")}</span>
+      </div>
+      ${finding.cvss_vector ? `<div class="meta-line finding-meta"><span>CVSS vector: ${escapeHtml(finding.cvss_vector)}</span></div>` : ""}
+      ${finding.detected_by?.length ? `<div class="meta-line finding-meta"><span>Detected by: ${escapeHtml(finding.detected_by.join(", "))}</span></div>` : ""}
+      <p>${escapeHtml(finding.description)}</p>
+      <div class="remediation-note"><strong>Action:</strong> ${escapeHtml(finding.remediation)}</div>
+      ${finding.evidence ? `<details><summary>Evidence</summary><pre>${escapeHtml(finding.evidence)}</pre></details>` : ""}
+    </article>
+  `;
+
+  document.getElementById("findings-list").innerHTML = `
+    <article class="check-card report-check-card">
+      <div class="meta-line">
+        <strong>Assessment Coverage</strong>
+        <span class="pill ${String(report.assessment_coverage_status || "").toLowerCase()}">${escapeHtml(report.assessment_coverage_status || "Complete")}</span>
+      </div>
+      <p>${Number(report.assessment_coverage || 0)}% of intended assessment components completed. Scanner errors are listed as diagnostics, not customer vulnerabilities.</p>
+    </article>
+    ${
+      diagnostics.length
+        ? `<h3>Assessment Diagnostics</h3>${diagnostics
+            .map(
+              (diagnostic) => `
+                <article class="check-card report-check-card">
+                  <div class="meta-line">
+                    <strong>${escapeHtml(diagnostic.name)}</strong>
+                    <span class="pill ${escapeHtml(diagnostic.status)}">${escapeHtml(diagnostic.status)}</span>
+                  </div>
+                  <p>${escapeHtml(diagnostic.detail)}</p>
+                </article>
+              `
+            )
+            .join("")}`
+        : ""
+    }
+    <h3>Confirmed and Potential Vulnerabilities</h3>
+    ${
+      vulnerabilityFindings.length
+        ? vulnerabilityFindings.map(renderFindingCard).join("")
+        : `<div class="check-card">No confirmed or potential vulnerability findings were validated from the available scanner evidence.</div>`
+    }
+    <h3>Exposures and Security Observations</h3>
+    ${
+      observationFindings.length
+        ? observationFindings.map(renderFindingCard).join("")
+        : `<div class="check-card">No additional exposure or informational observations were recorded.</div>`
+    }
+  `;
 }
 
 function renderReportCockpit(report, activeScan) {
   const counts = report.severity_counts || {};
-  const totalFindings = ["critical", "high", "medium", "low", "info"].reduce(
+  const totalFindings = ["critical", "high", "medium", "low"].reduce(
     (sum, key) => sum + Number(counts[key] || 0),
     0
   );
+  const coverage = Number(report.assessment_coverage || 0);
   const riskScore = Number(report.risk_score || 0);
   const criticalHigh = Number(counts.critical || 0) + Number(counts.high || 0);
   const riskAngle = Math.max(0, Math.min(100, riskScore)) * 3.6;
@@ -1310,9 +1357,9 @@ function renderReportCockpit(report, activeScan) {
 
   const kpis = [
     ["Risk Score", `${riskScore}/100`, report.risk_band || "N/A"],
-    ["Findings", totalFindings, "Total observations"],
+    ["Coverage", `${coverage}%`, report.assessment_coverage_status || "Complete"],
+    ["Vulnerabilities", totalFindings, "Validated findings"],
     ["Critical + High", criticalHigh, "Immediate focus"],
-    ["Report Type", activeScan ? formatMode(activeScan.assessment_mode) : "Assessment", activeScan ? formatTier(activeScan.scan_tier) : "Completed"],
   ];
   document.getElementById("report-kpi-grid").innerHTML = kpis
     .map(

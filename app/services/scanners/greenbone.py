@@ -35,7 +35,7 @@ class GreenboneScannerProvider:
         connection = self._build_connection()
         with self.GMP(connection=connection, transform=self.EtreeCheckCommandTransform()) as gmp:
             gmp.authenticate(self.settings.greenbone_username, self.settings.greenbone_password)
-            target_id = gmp.create_target(name=f"Sentinel Scope {target}", hosts=[target]).get("id")
+            target_id = gmp.create_target(name=f"KryptScan {target}", hosts=[target]).get("id")
             task_id = gmp.create_task(
                 name=f"Assessment {target}",
                 config_id=self.settings.greenbone_scan_config_id,

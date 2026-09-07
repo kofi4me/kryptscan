@@ -130,7 +130,7 @@ def get_settings() -> Settings:
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     return Settings(
-        app_name=_env("APP_NAME", "Sentinel Scope"),
+        app_name=_env("APP_NAME", "KryptScan"),
         app_env=_env("APP_ENV", "development").strip().lower(),
         app_secret=_env("APP_SECRET", "development-secret"),
         app_host=_env("APP_HOST", "127.0.0.1"),

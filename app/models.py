@@ -209,6 +209,12 @@ class Finding(BaseModel):
     port: str | None = None
     service: str | None = None
     cve: str | None = None
+    cwe: str | None = None
+    cvss_vector: str | None = None
+    finding_type: str = "VULNERABILITY"
+    validation_status: str = "POTENTIAL"
+    confidence: int = 50
+    detected_by: list[str] = Field(default_factory=list)
     description: str
     remediation: str
     evidence: str | None = None
@@ -231,11 +237,14 @@ class AssessmentReport(BaseModel):
     executive_summary: str
     risk_score: int
     risk_band: str
+    assessment_coverage: int = 100
+    assessment_coverage_status: str = "Complete"
     severity_counts: SeverityCounts
     scope_summary: str = ""
     methodology: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     scan_protocols: list[str] = Field(default_factory=list)
+    diagnostics: list[ComplianceCheck] = Field(default_factory=list)
     findings: list[Finding]
     compliance_checks: list[ComplianceCheck]
     remediation_plan: list[RemediationItem]
