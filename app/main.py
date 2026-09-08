@@ -387,6 +387,23 @@ def _serialize_audit_event(row: Row) -> AuditEventSummary:
     )
 
 
+def _serialize_admin_audit_event(row: Row) -> dict:
+    try:
+        details = json.loads(row["details_json"] or "{}")
+    except ValueError:
+        details = {}
+    return {
+        "id": row["id"],
+        "organization_id": row["organization_id"],
+        "organization_name": row["organization_name"],
+        "actor_id": row["actor_id"],
+        "actor_email": row["actor_email"],
+        "action": row["action"],
+        "details": details,
+        "created_at": row["created_at"],
+    }
+
+
 def _audit(connection, user: Row, action: str, details: dict | None = None) -> None:
     connection.execute(
         """
@@ -401,6 +418,36 @@ def _audit(connection, user: Row, action: str, details: dict | None = None) -> N
             utcnow().isoformat(),
         ),
     )
+
+
+def _audit_auth_event_for_email(email: str, action: str, details: dict | None = None) -> None:
+    normalized = email.strip().lower()
+    if not normalized:
+        return
+    with get_connection() as connection:
+        user = connection.execute(
+            """
+            SELECT id, organization_id
+            FROM users
+            WHERE email = ?
+            """,
+            (normalized,),
+        ).fetchone()
+        if user is None:
+            return
+        connection.execute(
+            """
+            INSERT INTO audit_events (organization_id, actor_id, action, details_json, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                user["organization_id"],
+                user["id"],
+                action,
+                json.dumps(details or {}),
+                utcnow().isoformat(),
+            ),
+        )
 
 
 def _clean_optional(value: str | None) -> str:
@@ -477,6 +524,11 @@ def _require_owner_or_analyst(user: Row) -> None:
 def _require_owner(user: Row) -> None:
     if user["role"] != "owner":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner role required.")
+
+
+def _require_admin(user: Row) -> None:
+    if user["role"] not in {"admin", "super_admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
 
 
 def _require_completed_registration(user: Row) -> None:
@@ -1248,6 +1300,18 @@ def kryptscan_index(request: Request) -> HTMLResponse:
     return index(request)
 
 
+@app.get("/kryptnet-admin", response_class=HTMLResponse)
+@app.get("/kryptnet-admin/", response_class=HTMLResponse)
+def admin_index(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "admin.html",
+        {
+            "app_name": settings.app_name,
+        },
+    )
+
+
 @app.get("/health")
 def health() -> dict:
     return {
@@ -1446,15 +1510,69 @@ def login(request: Request, payload: LoginRequest) -> Response:
     try:
         user = auth_service.login(payload.email, payload.password)
     except PermissionError as exc:
+        _audit_auth_event_for_email(
+            payload.email,
+            "auth.login_verification_required",
+            {"ip": _client_ip(request), "reason": str(exc)[:160]},
+        )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except ValueError as exc:
+        _audit_auth_event_for_email(
+            payload.email,
+            "auth.login_failed",
+            {"ip": _client_ip(request), "reason": str(exc)[:160]},
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     token = create_session_token(settings, int(user["id"]), user["email"])
     _purge_user_scan_history(user)
     response = JSONResponse({"message": "Login successful.", "user": _serialize_user(user)})
     _set_authenticated_cookies(response, token)
+    with get_connection() as connection:
+        _audit(connection, user, "auth.login_success", {"ip": _client_ip(request), "admin": False})
     return response
+
+
+@app.post("/api/admin/login")
+def admin_login(request: Request, payload: LoginRequest) -> Response:
+    _rate_limit(request, "admin.login", limit=8, window_seconds=15 * 60)
+    try:
+        user = auth_service.login(payload.email, payload.password)
+    except PermissionError as exc:
+        _audit_auth_event_for_email(
+            payload.email,
+            "admin.login_verification_required",
+            {"ip": _client_ip(request), "reason": str(exc)[:160]},
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        _audit_auth_event_for_email(
+            payload.email,
+            "admin.login_failed",
+            {"ip": _client_ip(request), "reason": str(exc)[:160]},
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+
+    if user["role"] not in {"admin", "super_admin"}:
+        _audit_auth_event_for_email(
+            payload.email,
+            "admin.login_denied",
+            {"ip": _client_ip(request), "role": user["role"]},
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
+
+    token = create_session_token(settings, int(user["id"]), user["email"])
+    response = JSONResponse({"message": "Admin login successful.", "user": _serialize_user(user)})
+    _set_authenticated_cookies(response, token)
+    with get_connection() as connection:
+        _audit(connection, user, "admin.login_success", {"ip": _client_ip(request)})
+    return response
+
+
+@app.get("/api/admin/me")
+def admin_me(user: Row = Depends(get_current_user)) -> dict:
+    _require_admin(user)
+    return {"user": _serialize_user(user)}
 
 
 @app.post("/api/auth/password-reset/request")
@@ -1706,6 +1824,218 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
         audit_events=[_serialize_audit_event(row) for row in audit_events],
         scans=scan_summaries,
     )
+
+
+@app.get("/api/admin/security-overview")
+def admin_security_overview(user: Row = Depends(get_current_user)) -> dict:
+    _require_admin(user)
+    now_ts = int(utcnow().timestamp())
+    since_24h = (utcnow() - timedelta(hours=24)).isoformat()
+    with get_connection() as connection:
+        totals = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total_users,
+                SUM(CASE WHEN is_verified = 1 THEN 1 ELSE 0 END) AS verified_users,
+                SUM(CASE WHEN is_verified = 0 THEN 1 ELSE 0 END) AS pending_users,
+                SUM(CASE WHEN profile_completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed_profiles,
+                SUM(CASE WHEN failed_login_count > 0 THEN 1 ELSE 0 END) AS accounts_with_failures,
+                SUM(CASE WHEN locked_until IS NOT NULL AND CAST(locked_until AS INTEGER) > ? THEN 1 ELSE 0 END) AS locked_accounts
+            FROM users
+            """,
+            (now_ts,),
+        ).fetchone()
+        scan_totals = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS total_scans,
+                SUM(CASE WHEN status IN ('queued', 'running') THEN 1 ELSE 0 END) AS active_scans,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_scans,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_scans
+            FROM scans
+            """
+        ).fetchone()
+        risk_rows = connection.execute(
+            """
+            SELECT report_json
+            FROM scans
+            WHERE report_json IS NOT NULL
+            ORDER BY id DESC
+            LIMIT 200
+            """
+        ).fetchall()
+        audit_totals = connection.execute(
+            """
+            SELECT
+                SUM(CASE WHEN action IN ('auth.login_failed', 'admin.login_failed') AND created_at >= ? THEN 1 ELSE 0 END) AS failed_logins_24h,
+                SUM(CASE WHEN action IN ('auth.login_success', 'admin.login_success') AND created_at >= ? THEN 1 ELSE 0 END) AS successful_logins_24h,
+                SUM(CASE WHEN action = 'report.pdf_emailed' THEN 1 ELSE 0 END) AS reports_emailed,
+                SUM(CASE WHEN action = 'report.pdf_downloaded' THEN 1 ELSE 0 END) AS pdf_downloads
+            FROM audit_events
+            """,
+            (since_24h, since_24h),
+        ).fetchone()
+        recent_events = connection.execute(
+            """
+            SELECT audit_events.*, users.email AS actor_email, organizations.name AS organization_name
+            FROM audit_events
+            LEFT JOIN users ON users.id = audit_events.actor_id
+            LEFT JOIN organizations ON organizations.id = audit_events.organization_id
+            ORDER BY audit_events.id DESC
+            LIMIT 12
+            """
+        ).fetchall()
+    risk_scores = []
+    for row in risk_rows:
+        try:
+            score = json.loads(row["report_json"] or "{}").get("risk_score")
+        except ValueError:
+            score = None
+        if isinstance(score, (int, float)):
+            risk_scores.append(float(score))
+    average_risk_score = round(sum(risk_scores) / len(risk_scores), 1) if risk_scores else 0
+    return {
+        "users": {key: totals[key] or 0 for key in totals.keys()},
+        "scans": {key: scan_totals[key] or 0 for key in scan_totals.keys()} | {"average_risk_score": average_risk_score},
+        "auth": {key: audit_totals[key] or 0 for key in audit_totals.keys()},
+        "recent_events": [_serialize_admin_audit_event(row) for row in recent_events],
+    }
+
+
+@app.get("/api/admin/users")
+def admin_users(request: Request, user: Row = Depends(get_current_user)) -> dict:
+    _rate_limit(request, "admin.users", limit=60, window_seconds=60)
+    _require_admin(user)
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                users.id,
+                users.email,
+                users.full_name,
+                users.company_name,
+                users.phone_number,
+                users.role,
+                users.is_verified,
+                users.profile_completed_at,
+                users.failed_login_count,
+                users.locked_until,
+                users.created_at,
+                users.verified_at,
+                users.last_login_at,
+                organizations.name AS organization_name,
+                organizations.email_domain,
+                COUNT(scans.id) AS scan_count,
+                MAX(scans.created_at) AS last_scan_at
+            FROM users
+            JOIN organizations ON organizations.id = users.organization_id
+            LEFT JOIN scans ON scans.requested_by = users.id
+            GROUP BY users.id
+            ORDER BY users.created_at DESC
+            LIMIT 500
+            """
+        ).fetchall()
+    return {
+        "users": [
+            {
+                "id": row["id"],
+                "email": row["email"],
+                "full_name": row["full_name"],
+                "organization_name": row["organization_name"],
+                "company_name": row["company_name"],
+                "email_domain": row["email_domain"],
+                "phone_number": row["phone_number"],
+                "role": row["role"],
+                "is_verified": bool(row["is_verified"]),
+                "profile_completed_at": row["profile_completed_at"],
+                "failed_login_count": row["failed_login_count"] or 0,
+                "locked_until": row["locked_until"],
+                "scan_count": row["scan_count"] or 0,
+                "last_scan_at": row["last_scan_at"],
+                "created_at": row["created_at"],
+                "verified_at": row["verified_at"],
+                "last_login_at": row["last_login_at"],
+            }
+            for row in rows
+        ]
+    }
+
+
+@app.get("/api/admin/scans")
+def admin_scans(request: Request, user: Row = Depends(get_current_user)) -> dict:
+    _rate_limit(request, "admin.scans", limit=60, window_seconds=60)
+    _require_admin(user)
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                scans.id,
+                scans.status,
+                scans.assessment_mode,
+                scans.scan_tier,
+                scans.scanner_backend,
+                scans.progress_percent,
+                scans.progress_message,
+                scans.error_message,
+                scans.report_email_sent_at,
+                scans.report_email_error,
+                scans.created_at,
+                scans.started_at,
+                scans.completed_at,
+                targets.normalized_target,
+                targets.asset_type,
+                users.email AS requested_by_email,
+                organizations.name AS organization_name
+            FROM scans
+            JOIN targets ON targets.id = scans.target_id
+            JOIN users ON users.id = scans.requested_by
+            JOIN organizations ON organizations.id = scans.organization_id
+            ORDER BY scans.id DESC
+            LIMIT 200
+            """
+        ).fetchall()
+    return {
+        "scans": [
+            {
+                "id": row["id"],
+                "target": row["normalized_target"],
+                "asset_type": row["asset_type"],
+                "status": row["status"],
+                "assessment_mode": row["assessment_mode"],
+                "scan_tier": row["scan_tier"],
+                "scanner_backend": row["scanner_backend"],
+                "progress_percent": row["progress_percent"] or 0,
+                "progress_message": row["progress_message"],
+                "error_message": row["error_message"],
+                "report_email_sent_at": row["report_email_sent_at"],
+                "report_email_error": row["report_email_error"],
+                "created_at": row["created_at"],
+                "started_at": row["started_at"],
+                "completed_at": row["completed_at"],
+                "requested_by_email": row["requested_by_email"],
+                "organization_name": row["organization_name"],
+            }
+            for row in rows
+        ]
+    }
+
+
+@app.get("/api/admin/audit-events")
+def admin_audit_events(request: Request, user: Row = Depends(get_current_user)) -> dict:
+    _rate_limit(request, "admin.audit", limit=60, window_seconds=60)
+    _require_admin(user)
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT audit_events.*, users.email AS actor_email, organizations.name AS organization_name
+            FROM audit_events
+            LEFT JOIN users ON users.id = audit_events.actor_id
+            LEFT JOIN organizations ON organizations.id = audit_events.organization_id
+            ORDER BY audit_events.id DESC
+            LIMIT 200
+            """
+        ).fetchall()
+    return {"events": [_serialize_admin_audit_event(row) for row in rows]}
 
 
 @app.post("/api/payments/intent")

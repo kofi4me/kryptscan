@@ -88,4 +88,32 @@ LAUNCH_SCAN_LIMIT_PER_USER=3
 
 Set `LAUNCH_SCAN_LIMIT_PER_USER=0` only when the public launch limit should be removed.
 
+## Admin Monitoring Console
+
+The admin console is intentionally not linked from the public homepage. Open it directly:
+
+```text
+https://kryptscan.kryptnet.org/kryptnet-admin
+```
+
+Promote only trusted operator accounts after the user has registered and verified their email:
+
+```bash
+cd /opt/kryptnet-services/kryptscan-app
+python3 - <<'PY'
+import sqlite3
+
+db = "data/vuln_app.db"
+email = "kofi4me@gmail.com"
+
+with sqlite3.connect(db) as connection:
+    connection.execute("UPDATE users SET role = 'admin' WHERE email = ?", (email,))
+    updated = connection.total_changes
+
+print(f"Admin role updates: {updated}")
+PY
+```
+
+Admin accounts can monitor user registrations, verification status, login failures, locked accounts, scan progress, scan failures, report email delivery, PDF downloads, and audit events. Keep admin access limited to named operator accounts and review failed admin login events regularly.
+
 The Ethical Pen-Testing backend uses conservative connector defaults: passive reconnaissance for Amass/Subfinder, DNS and HTTP fingerprinting, limited-rate service discovery, shallow application crawling, WAF detection, baseline ZAP checks, TLS posture tools, Nikto web server review, Trivy/Semgrep/Gitleaks/Grype/Checkov local posture review, cloud readiness checks, and report-only AI summarization. It must not be used without approved scope and rules of engagement.
