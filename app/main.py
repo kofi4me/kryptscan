@@ -722,16 +722,20 @@ def _enrich_report_for_scan(
     executive_summary = report.executive_summary
     if mode == "ethical_pentesting":
         manual_count = sum(1 for item in report.findings if item.detected_by and "Manual analyst review" in item.detected_by)
+        critical_high_count = report.severity_counts.critical + report.severity_counts.high
+        issue_label = "issue" if critical_high_count == 1 else "issues"
+        action_label = "requires" if critical_high_count == 1 else "require"
         diagnostics_note = (
-            f" Assessment coverage is {report.assessment_coverage}% ({report.assessment_coverage_status.lower()}); review diagnostics before treating the test as exhaustive."
+            "Scanner diagnostics were separated from client vulnerabilities and should be reviewed before treating this assessment as exhaustive."
             if report.assessment_coverage_status != "Complete"
-            else " Assessment coverage completed without material scanner diagnostics."
+            else "Scanner diagnostics were separated from client vulnerabilities, and assessment coverage completed without material tool-health issues."
         )
         executive_summary = (
-            f"Ethical Pen-Testing was performed against {scan['normalized_target']} under the approved rules of engagement. "
-            f"KryptScan separated confirmed and potential vulnerabilities from observations and scanner diagnostics. "
-            f"{manual_count} analyst-confirmed manual finding(s) are included where tester evidence was supplied."
-            f"{diagnostics_note} Remediation should prioritize confirmed critical/high issues, exploitable exposure paths, and retesting after corrective action."
+            f"Ethical Pen-Testing was completed for {scan['normalized_target']} under the approved rules of engagement.\n\n"
+            f"KryptScan identified a {report.risk_band} Risk posture with a score of {report.risk_score}/100. "
+            f"{critical_high_count} critical/high {issue_label} {action_label} priority review, and assessment coverage reached {report.assessment_coverage}%."
+            f"{' ' + str(manual_count) + ' analyst-confirmed manual finding(s) are included where tester evidence was supplied.' if manual_count else ''}\n\n"
+            f"{diagnostics_note}"
         )
     return report.model_copy(
         update={
