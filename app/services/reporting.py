@@ -45,6 +45,17 @@ CONFIRMED_EVIDENCE_PATTERNS = [
     r"\baffected\b",
 ]
 INCONCLUSIVE_TEST_NAMES = {"heartbleed", "robot"}
+FINAL_REPORT_STATUSES = {
+    "CONFIRMED",
+    "LIKELY",
+    "POTENTIAL",
+    "INCONCLUSIVE",
+    "NOT_VULNERABLE",
+    "FALSE_POSITIVE",
+    "REMEDIATED",
+    "ACCEPTED_RISK",
+    "INFORMATIONAL",
+}
 
 
 def severity_from_cvss(cvss: float) -> str:
@@ -220,6 +231,49 @@ def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
     return list(deduped.values())
 
 
+def _integrity_diagnostics(findings: list[Finding]) -> list[ComplianceCheck]:
+    diagnostics: list[ComplianceCheck] = []
+    for finding in findings:
+        text = " ".join([finding.title, finding.description, finding.evidence or ""])
+        finding_label = finding.title[:120]
+        if finding.severity in {"critical", "high"} and _has_pattern(text, NEGATIVE_EVIDENCE_PATTERNS):
+            diagnostics.append(
+                ComplianceCheck(
+                    name=f"Report integrity: {finding_label}",
+                    status="fail",
+                    detail=(
+                        "High-impact severity conflicted with negative evidence. The item was removed from "
+                        "executive vulnerability counts and requires analyst review before final client delivery."
+                    ),
+                )
+            )
+        if finding.validation_status == "CONFIRMED" and not (finding.description.strip() or (finding.evidence or "").strip()):
+            diagnostics.append(
+                ComplianceCheck(
+                    name=f"Report integrity: {finding_label}",
+                    status="fail",
+                    detail="Confirmed finding has no description or evidence. Analyst review is required.",
+                )
+            )
+        if finding.cvss >= 9.0 and not finding.cvss_vector:
+            diagnostics.append(
+                ComplianceCheck(
+                    name=f"Report integrity: {finding_label}",
+                    status="warn",
+                    detail="Critical CVSS score has no CVSS vector. Add a vector before issuing a final technical report.",
+                )
+            )
+        if finding.validation_status not in FINAL_REPORT_STATUSES and finding.finding_type != "SCANNER_ERROR":
+            diagnostics.append(
+                ComplianceCheck(
+                    name=f"Report integrity: {finding_label}",
+                    status="warn",
+                    detail=f"Unexpected finding status '{finding.validation_status}' should be reviewed before final delivery.",
+                )
+            )
+    return diagnostics
+
+
 def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentReport:
     findings = _deduplicate_findings([_validated_finding(item) for item in findings])
     findings = sorted(
@@ -227,11 +281,12 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
         key=lambda item: (SEVERITY_WEIGHTS[item.severity], item.confidence, item.cvss),
         reverse=True,
     )
-    diagnostics = [
+    scanner_diagnostics = [
         ComplianceCheck(name=item.title, status="fail", detail=item.description)
         for item in findings
         if item.finding_type == "SCANNER_ERROR"
     ]
+    diagnostics = [*scanner_diagnostics, *_integrity_diagnostics(findings)]
     reportable_findings = [
         item
         for item in findings
@@ -260,7 +315,7 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
     service_counter = Counter(item.service or "unknown" for item in reportable_findings)
     category_counter = Counter(item.category for item in reportable_findings)
     expected_components = 9
-    completed_components = max(0, expected_components - len(diagnostics))
+    completed_components = max(0, expected_components - len(scanner_diagnostics))
     assessment_coverage = round((completed_components / expected_components) * 100)
     coverage_status = "Complete" if assessment_coverage >= 90 else "Partial" if assessment_coverage >= 55 else "Limited"
 
