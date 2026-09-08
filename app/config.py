@@ -91,6 +91,9 @@ class Settings:
     katana_path: str
     wafw00f_path: str
     whatweb_path: str
+    feroxbuster_path: str
+    ffuf_path: str
+    gobuster_path: str
     semgrep_path: str
     gitleaks_path: str
     grype_path: str
@@ -184,6 +187,9 @@ def get_settings() -> Settings:
         katana_path=_env("KATANA_PATH", "katana"),
         wafw00f_path=_env("WAFW00F_PATH", "wafw00f"),
         whatweb_path=_env("WHATWEB_PATH", "whatweb"),
+        feroxbuster_path=_env("FEROXBUSTER_PATH", "feroxbuster"),
+        ffuf_path=_env("FFUF_PATH", "ffuf"),
+        gobuster_path=_env("GOBUSTER_PATH", "gobuster"),
         semgrep_path=_env("SEMGREP_PATH", "semgrep"),
         gitleaks_path=_env("GITLEAKS_PATH", "gitleaks"),
         grype_path=_env("GRYPE_PATH", "grype"),

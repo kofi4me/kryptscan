@@ -17,8 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     libxml-writer-perl \
     libpcap-dev \
+    libssl-dev \
     nmap \
     perl \
+    pkg-config \
     python3-pip \
     ruby \
     unzip \
@@ -37,6 +39,15 @@ RUN go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest && go clean -cac
 RUN go install github.com/projectdiscovery/katana/cmd/katana@latest && go clean -cache -modcache
 RUN go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && go clean -cache -modcache
 RUN go install github.com/owasp-amass/amass/v4/...@latest && go clean -cache -modcache
+RUN go install github.com/ffuf/ffuf/v2@latest && go clean -cache -modcache
+RUN go install github.com/OJ/gobuster/v3@latest && go clean -cache -modcache
+
+RUN curl -fsSL https://sh.rustup.rs -o /tmp/rustup.sh \
+    && sh /tmp/rustup.sh -y --profile minimal \
+    && . "$HOME/.cargo/env" \
+    && cargo install feroxbuster --locked \
+    && cp "$HOME/.cargo/bin/feroxbuster" /usr/local/bin/feroxbuster \
+    && rm -rf "$HOME/.cargo" /tmp/rustup.sh
 
 RUN pip install --no-cache-dir \
     checkov \
@@ -74,6 +85,11 @@ RUN wget -q https://sourceforge.net/projects/zap.mirror/files/v2.17.0/ZAP_2.17.0
         'exit 127' > /usr/local/bin/zap-baseline.py \
     && chmod +x /usr/local/bin/zap-baseline.py \
     && rm /tmp/zap.tgz
+
+RUN mkdir -p /opt/kryptscan/wordlists \
+    && printf '%s\n' \
+        admin api backup backups config dashboard dev files health login old portal private reports staging status test upload uploads wp-admin \
+        > /opt/kryptscan/wordlists/web-content.txt
 
 WORKDIR /workspace
 

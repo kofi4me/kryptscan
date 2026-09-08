@@ -17,6 +17,9 @@ Bundled tools include:
 - Naabu
 - dnsx
 - Katana
+- Feroxbuster
+- ffuf
+- Gobuster
 - wafw00f
 - WhatWeb
 - Semgrep
@@ -37,7 +40,8 @@ After startup, open the app and check the Scanner Health dashboard. Missing tool
 
 Security notes:
 
-- Run this worker only for verified users, completed registration, completed payment, and authorized targets.
+- Run this worker only for verified users, completed registration, and authorized targets. Enable payment gating only when the business workflow is ready.
 - Keep `ALLOW_PRIVATE_NETWORK_TARGETS=false` for public deployments.
 - Use a separate isolated scanner worker for internal network testing.
 - Store `APP_SECRET`, SMTP credentials, payment webhook secrets, and AI API keys in the hosting secret manager.
+- Website ethical pen-tests use Feroxbuster, ffuf, and Gobuster with a small KryptScan wordlist and conservative rate/thread settings for controlled content discovery.

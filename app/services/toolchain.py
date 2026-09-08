@@ -4,8 +4,8 @@ from __future__ import annotations
 ETHICAL_PENTEST_TOOLCHAIN = [
     {
         "category": "Web and API",
-        "tools": ["Nuclei", "OWASP ZAP baseline", "Nikto", "Katana crawler", "httpx", "WhatWeb", "HTTP header and session review"],
-        "purpose": "Identify OWASP-style weaknesses, exposed panels, weak headers, and risky API behavior within approved scope.",
+        "tools": ["Nuclei", "OWASP ZAP baseline", "Nikto", "Katana crawler", "httpx", "WhatWeb", "Feroxbuster", "ffuf", "Gobuster", "HTTP header and session review"],
+        "purpose": "Identify OWASP-style weaknesses, exposed panels, weak headers, reviewable hidden content, and risky API behavior within approved scope.",
     },
     {
         "category": "Network and Services",
@@ -61,7 +61,7 @@ ASSESSMENT_PROFILES = [
         "id": "ethical_pentesting",
         "name": "Ethical Pen-Testing",
         "summary": "Full-stack ethical testing workflow for verified, authorized targets with approved scope.",
-        "categories": ["web", "API", "network", "identity", "cloud", "manual evidence", "AI reporting"],
+        "categories": ["web", "API", "network", "TLS", "authorized recon", "manual evidence", "AI reporting", "optional cloud/code modules"],
         "requires_engagement": False,
     },
 ]

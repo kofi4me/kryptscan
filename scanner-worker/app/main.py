@@ -33,6 +33,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 CLOUD_CHECKS_ENABLED = os.getenv("CLOUD_CHECKS_ENABLED", "false").lower() in {"1", "true", "yes"}
+WEB_DISCOVERY_WORDLIST = os.getenv("WEB_DISCOVERY_WORDLIST", "/opt/kryptscan/wordlists/web-content.txt")
+WEB_DISCOVERY_RATE_LIMIT = os.getenv("WEB_DISCOVERY_RATE_LIMIT", "10")
 
 app = FastAPI(title="KryptScan Scanner Worker")
 JOBS: dict[str, dict] = {}
@@ -157,7 +159,7 @@ def _tool_output_is_usable(tool: str, returncode: int, output: str) -> bool:
     ]
     if any(marker in lower for marker in failure_markers):
         return False
-    if tool in {"nuclei", "httpx", "naabu", "dnsx", "katana", "subfinder"}:
+    if tool in {"nuclei", "httpx", "naabu", "dnsx", "katana", "subfinder", "ffuf", "feroxbuster", "gobuster"}:
         return returncode in {0, 1}
     if tool in {"nikto", "testssl.sh", "zap-baseline.py"}:
         return returncode in {0, 1, 2}
@@ -215,6 +217,9 @@ def _parse_tool_findings(target: str, tool: str, output: str, category: str) -> 
         "whatweb": _parse_whatweb_findings,
         "wafw00f": _parse_wafw00f_findings,
         "httpx": _parse_httpx_findings,
+        "feroxbuster": _parse_content_discovery_findings,
+        "ffuf": _parse_content_discovery_findings,
+        "gobuster": _parse_content_discovery_findings,
     }
     parser = parsers.get(tool.lower())
     if parser:
@@ -461,6 +466,39 @@ def _parse_httpx_findings(target: str, tool: str, output: str, category: str) ->
     return [finding] if finding else []
 
 
+def _parse_content_discovery_findings(target: str, tool: str, output: str, category: str) -> list[Finding]:
+    paths: list[str] = []
+    for line in output.splitlines():
+        clean = line.strip()
+        if not clean:
+            continue
+        if re.search(r"\b(200|204|301|302|307|308|401|403)\b", clean) or clean.startswith(("http://", "https://", "/")):
+            paths.append(clean[:220])
+    if not paths:
+        return []
+    examples = " | ".join(paths[:12])
+    severity = "medium" if any(re.search(r"\b(backup|admin|config|private|uploads?|old)\b", item, re.I) for item in paths) else "info"
+    finding = _finding(
+        target,
+        f"{tool} discovered reviewable web content",
+        severity,
+        category,
+        "web-content-discovery",
+        f"{tool} discovered {len(paths)} candidate path(s) within the approved scope. Examples: {examples}",
+        "Manually review discovered paths for authorization, exposure, sensitive data, and unnecessary public access. Remove, restrict, or monitor risky endpoints, then retest.",
+        5.2 if severity == "medium" else 0.0,
+    )
+    return [
+        finding.model_copy(
+            update={
+                "finding_type": "EXPOSURE",
+                "validation_status": "POTENTIAL" if severity == "medium" else "INFORMATIONAL",
+                "confidence": 70,
+            }
+        )
+    ]
+
+
 def _http_status_finding(target: str, output: str) -> Finding | None:
     lower = output.lower()
     if "http://" not in lower and "https://" not in lower and "[" not in output:
@@ -661,6 +699,7 @@ def _pentest_context_findings(target: str, payload: ScanRequest) -> list[Finding
 def _tool_plan(target: str, payload: ScanRequest) -> list[tuple[str, list[str], str]]:
     host = _validate_target(target)
     url = _url(target)
+    wordlist = WEB_DISCOVERY_WORDLIST
     checks = [
         ("Nmap", ["nmap", "-sV", "--top-ports", "100", "--version-light", host], "Network Exposure"),
         ("SSLyze", ["sslyze", "--certinfo", "--tlsv1_2", "--tlsv1_3", "--heartbleed", "--robot", "--compression", f"{host}:443"], "TLS Posture"),
@@ -687,6 +726,68 @@ def _tool_plan(target: str, payload: ScanRequest) -> list[tuple[str, list[str], 
                 ("Amass", ["amass", "enum", "-passive", "-d", host], "Authorized Reconnaissance"),
             ]
         )
+        if payload.asset_type == "website":
+            checks.extend(
+                [
+                    (
+                        "Feroxbuster",
+                        [
+                            "feroxbuster",
+                            "-u",
+                            url,
+                            "-w",
+                            wordlist,
+                            "--depth",
+                            "1",
+                            "--rate-limit",
+                            WEB_DISCOVERY_RATE_LIMIT,
+                            "--threads",
+                            "5",
+                            "--silent",
+                            "--dont-extract-links",
+                            "--status-codes",
+                            "200,204,301,302,307,308,401,403",
+                        ],
+                        "Web Content Discovery",
+                    ),
+                    (
+                        "ffuf",
+                        [
+                            "ffuf",
+                            "-u",
+                            f"{url.rstrip('/')}/FUZZ",
+                            "-w",
+                            wordlist,
+                            "-rate",
+                            WEB_DISCOVERY_RATE_LIMIT,
+                            "-t",
+                            "5",
+                            "-mc",
+                            "200,204,301,302,307,308,401,403",
+                            "-s",
+                        ],
+                        "Web Content Discovery",
+                    ),
+                    (
+                        "Gobuster",
+                        [
+                            "gobuster",
+                            "dir",
+                            "-u",
+                            url,
+                            "-w",
+                            wordlist,
+                            "-t",
+                            "5",
+                            "-q",
+                            "-k",
+                            "-s",
+                            "200,204,301,302,307,308,401,403",
+                        ],
+                        "Web Content Discovery",
+                    ),
+                ]
+            )
         api_base_url = _context_text(payload, "api_base_url")
         if api_base_url:
             _validate_target(api_base_url)
@@ -728,6 +829,21 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
     stage_results: list[str] = []
     plan = list(_tool_plan(target, payload))
     findings.extend(_pentest_context_findings(target, payload))
+    findings.append(
+        _finding(
+            target,
+            "KryptScan v2 orchestrated test plan generated",
+            "info",
+            "Assessment Planning",
+            "kryptscan-orchestrator",
+            (
+                f"Target profiling selected {len(plan)} safe scanner stage(s) for asset type "
+                f"{payload.asset_type} and assessment mode {payload.assessment_mode}. "
+                f"Planned engines: {', '.join(tool for tool, _, _ in plan)}."
+            ),
+            "Review scanner diagnostics and findings to confirm every planned stage completed successfully before treating coverage as exhaustive.",
+        )
+    )
     _set_job_status(
         job_id,
         status="running",
@@ -794,6 +910,9 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
         message="Building the final report, graphs, risk metrics, and remediation priorities.",
     )
     report = build_assessment_report(target, findings)
+    completed_stages = sum(1 for item in stage_results if ": completed" in item)
+    assessment_coverage = round((completed_stages / max(len(plan), 1)) * 100)
+    coverage_status = "Complete" if assessment_coverage >= 90 else "Partial" if assessment_coverage >= 55 else "Limited"
     mode_label = "Ethical Pen-Testing" if payload.assessment_mode == "ethical_pentesting" else "Vulnerability Assessment"
     pen_test_protocols = []
     if payload.assessment_mode == "ethical_pentesting":
@@ -812,6 +931,7 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
             "scan_protocols": [
                 *payload.scan_protocols,
                 *pen_test_protocols,
+                f"Target profiling selected {len(plan)} scanner stage(s) based on target type, authorization, and assessment profile",
                 "Scanner worker executed the containerized safe tool profile",
                 *stage_results,
                 "Private/reserved target policy enforced before tool execution",
@@ -819,6 +939,8 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
                 "Tool output normalized into KryptScan reporting schema",
             ],
             "scope_summary": f"{mode_label} worker scan for {target}. Tier: {payload.scan_tier}.",
+            "assessment_coverage": assessment_coverage,
+            "assessment_coverage_status": coverage_status,
         }
     )
     return report.model_dump(mode="json")
@@ -862,6 +984,9 @@ def health() -> dict:
         "katana",
         "subfinder",
         "amass",
+        "feroxbuster",
+        "ffuf",
+        "gobuster",
         "trivy",
         "semgrep",
         "gitleaks",
