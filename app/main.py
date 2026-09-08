@@ -447,6 +447,40 @@ def _require_entitlement(connection, user: Row) -> None:
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Completed one-time payment required.")
 
 
+def _require_launch_scan_quota(connection, user: Row) -> None:
+    limit = settings.launch_scan_limit_per_user
+    if limit <= 0:
+        return
+    audited_used = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM audit_events
+        WHERE organization_id = ?
+          AND actor_id = ?
+          AND action = 'scan.launch_requested'
+        """,
+        (user["organization_id"], user["id"]),
+    ).fetchone()[0]
+    visible_scan_count = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM scans
+        WHERE organization_id = ?
+          AND requested_by = ?
+        """,
+        (user["organization_id"], user["id"]),
+    ).fetchone()[0]
+    used = max(audited_used, visible_scan_count)
+    if used >= limit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Temporary launch testing limit reached. Each registered tester account is limited to {limit} scans "
+                "during this launch review period. Please contact KryptNet LLC if you need additional test capacity."
+            ),
+        )
+
+
 def _summary_from_row(scan: Row) -> ScanSummary:
     report = _get_report_for_scan(scan)
     counts = report.severity_counts if report else None
@@ -2256,6 +2290,7 @@ def create_scan(
     with get_connection() as connection:
         if scan_tier == "full_scan":
             _require_entitlement(connection, user)
+        _require_launch_scan_quota(connection, user)
         connection.execute(
             """
             INSERT INTO targets (
@@ -2390,6 +2425,18 @@ def create_scan(
         scan_id = cursor.lastrowid
 
         scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
+        _audit(
+            connection,
+            user,
+            "scan.launch_requested",
+            {
+                "scan_id": scan_id,
+                "target": authorization["normalized_target"],
+                "mode": assessment_mode,
+                "tier": scan_tier,
+                "limit": settings.launch_scan_limit_per_user,
+            },
+        )
         _audit(
             connection,
             user,

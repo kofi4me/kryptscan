@@ -112,6 +112,7 @@ class Settings:
     scanner_worker_token: str
     scanner_worker_timeout_seconds: int
     scanner_min_full_scan_seconds: int
+    launch_scan_limit_per_user: int
     greenbone_connection: str
     greenbone_host: str
     greenbone_port: int
@@ -208,6 +209,7 @@ def get_settings() -> Settings:
         scanner_worker_token=_env("SCANNER_WORKER_TOKEN", ""),
         scanner_worker_timeout_seconds=_env_int("SCANNER_WORKER_TIMEOUT_SECONDS", 900),
         scanner_min_full_scan_seconds=_env_int("SCANNER_MIN_FULL_SCAN_SECONDS", 600),
+        launch_scan_limit_per_user=_env_int("LAUNCH_SCAN_LIMIT_PER_USER", 3),
         greenbone_connection=_env("GREENBONE_CONNECTION", "tls").strip().lower(),
         greenbone_host=_env("GREENBONE_HOST", "127.0.0.1"),
         greenbone_port=_env_int("GREENBONE_PORT", 9390),

@@ -77,4 +77,12 @@ OPENAI_MODEL=gpt-5-mini
 OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
+Temporary launch testing can be capped per registered tester account:
+
+```env
+LAUNCH_SCAN_LIMIT_PER_USER=3
+```
+
+Set `LAUNCH_SCAN_LIMIT_PER_USER=0` only when the public launch limit should be removed.
+
 The Ethical Pen-Testing backend uses conservative connector defaults: passive reconnaissance for Amass/Subfinder, DNS and HTTP fingerprinting, limited-rate service discovery, shallow application crawling, WAF detection, baseline ZAP checks, TLS posture tools, Nikto web server review, Trivy/Semgrep/Gitleaks/Grype/Checkov local posture review, cloud readiness checks, and report-only AI summarization. It must not be used without approved scope and rules of engagement.
