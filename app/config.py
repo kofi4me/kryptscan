@@ -56,6 +56,7 @@ class Settings:
     session_ttl_hours: int
     session_cookie_secure: bool
     trusted_hosts: list[str]
+    trusted_proxy_ips: list[str]
     rate_limit_enabled: bool
     max_request_body_bytes: int
     allow_private_network_targets: bool
@@ -152,6 +153,11 @@ def get_settings() -> Settings:
             host.strip()
             for host in _env("TRUSTED_HOSTS", "127.0.0.1,localhost").split(",")
             if host.strip()
+        ],
+        trusted_proxy_ips=[
+            address.strip()
+            for address in _env("TRUSTED_PROXY_IPS", "127.0.0.1,::1").split(",")
+            if address.strip()
         ],
         rate_limit_enabled=_env_bool("RATE_LIMIT_ENABLED", True),
         max_request_body_bytes=_env_int("MAX_REQUEST_BODY_BYTES", 1_048_576),

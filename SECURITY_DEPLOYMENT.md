@@ -8,6 +8,7 @@ APP_SECRET=replace-with-a-long-random-secret
 SESSION_COOKIE_SECURE=true
 CSRF_COOKIE_NAME=kryptnet_csrf
 TRUSTED_HOSTS=kryptscan.kryptnet.org
+TRUSTED_PROXY_IPS=127.0.0.1,::1
 RATE_LIMIT_ENABLED=true
 MAX_REQUEST_BODY_BYTES=1048576
 ALLOW_PRIVATE_NETWORK_TARGETS=false
@@ -27,6 +28,8 @@ Never deploy production with `PAYMENT_DEMO_MODE=true`. Demo mode is only for loc
 Keep scanner workers isolated from the web application process. Store reports outside the public static directory and require authenticated report downloads.
 
 Reports are served only from the configured reports directory and PDF downloads are marked `no-store`.
+
+Trust forwarded client IP headers only from the reverse proxy itself. Do not expose the FastAPI app port directly to the internet; keep public traffic routed through nginx or Caddy with HTTPS.
 
 ## Ethical Tool Connectors
 

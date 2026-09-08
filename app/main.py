@@ -94,7 +94,14 @@ def startup_event() -> None:
 
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
-    if int(request.headers.get("content-length") or 0) > settings.max_request_body_bytes:
+    try:
+        content_length = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        return JSONResponse(
+            {"detail": "Invalid Content-Length header."},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if content_length > settings.max_request_body_bytes:
         return JSONResponse(
             {"detail": "Request body is too large."},
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -107,8 +114,14 @@ async def security_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Permitted-Cross-Domain-Policies", "none")
+    response.headers.setdefault("X-Download-Options", "noopen")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    if request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "private, no-store, max-age=0")
     response.headers.setdefault(
         "Content-Security-Policy",
         (
@@ -124,7 +137,7 @@ async def security_middleware(request: Request, call_next):
         ),
     )
     if settings.session_cookie_secure:
-        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
     if not request.cookies.get(settings.csrf_cookie_name):
         response.set_cookie(
             settings.csrf_cookie_name,
@@ -138,10 +151,18 @@ async def security_middleware(request: Request, call_next):
 
 
 def _assert_secure_config() -> None:
-    if settings.app_env in {"production", "prod"} and settings.app_secret == "development-secret":
-        raise RuntimeError("Set APP_SECRET to a strong unique value before running in production.")
+    if settings.app_env in {"production", "prod"} and (
+        settings.app_secret == "development-secret" or len(settings.app_secret) < 32
+    ):
+        raise RuntimeError("Set APP_SECRET to a strong unique value of at least 32 characters before running in production.")
+    if settings.app_env in {"production", "prod"} and not settings.session_cookie_secure:
+        raise RuntimeError("SESSION_COOKIE_SECURE must be true in production.")
+    if settings.app_env in {"production", "prod"} and (not settings.trusted_hosts or "*" in settings.trusted_hosts):
+        raise RuntimeError("TRUSTED_HOSTS must name explicit production hosts. Wildcard trusted hosts are not allowed.")
     if settings.app_env in {"production", "prod"} and settings.payment_demo_mode:
         raise RuntimeError("PAYMENT_DEMO_MODE must be false in production.")
+    if settings.scanner_backend == "worker" and not settings.scanner_worker_token:
+        raise RuntimeError("SCANNER_WORKER_TOKEN must be set when SCANNER_BACKEND=worker.")
     if (
         settings.app_env in {"production", "prod"}
         and settings.payment_required
@@ -151,10 +172,11 @@ def _assert_secure_config() -> None:
 
 
 def _client_ip(request: Request) -> str:
+    client_host = request.client.host if request.client else "unknown"
     forwarded_for = request.headers.get("x-forwarded-for", "")
-    if forwarded_for:
+    if forwarded_for and client_host in settings.trusted_proxy_ips:
         return forwarded_for.split(",", 1)[0].strip()
-    return request.client.host if request.client else "unknown"
+    return client_host
 
 
 def _rate_limit(request: Request, bucket: str, *, limit: int, window_seconds: int) -> None:
@@ -201,6 +223,35 @@ def _verify_csrf_request(request: Request) -> JSONResponse | None:
         )
         return response
     return None
+
+
+def _session_cookie_max_age() -> int:
+    return int(timedelta(hours=settings.session_ttl_hours).total_seconds())
+
+
+def _set_authenticated_cookies(response: Response, token: str) -> None:
+    max_age = _session_cookie_max_age()
+    response.set_cookie(
+        settings.session_cookie_name,
+        token,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite="lax",
+        max_age=max_age,
+    )
+    response.set_cookie(
+        settings.csrf_cookie_name,
+        create_csrf_token(settings),
+        httponly=False,
+        secure=settings.session_cookie_secure,
+        samesite="lax",
+        max_age=max_age,
+    )
+
+
+def _delete_auth_cookies(response: Response) -> None:
+    response.delete_cookie(settings.session_cookie_name, secure=settings.session_cookie_secure, samesite="lax")
+    response.delete_cookie(settings.csrf_cookie_name, secure=settings.session_cookie_secure, samesite="lax")
 
 
 def _require_target_network_policy(normalized_target: str, target_kind: str) -> None:
@@ -1402,14 +1453,7 @@ def login(request: Request, payload: LoginRequest) -> Response:
     token = create_session_token(settings, int(user["id"]), user["email"])
     _purge_user_scan_history(user)
     response = JSONResponse({"message": "Login successful.", "user": _serialize_user(user)})
-    response.set_cookie(
-        settings.session_cookie_name,
-        token,
-        httponly=True,
-        secure=settings.session_cookie_secure,
-        samesite="lax",
-        max_age=int(timedelta(hours=settings.session_ttl_hours).total_seconds()),
-    )
+    _set_authenticated_cookies(response, token)
     return response
 
 
@@ -1430,14 +1474,7 @@ def confirm_password_reset(request: Request, payload: PasswordResetConfirmReques
     token = create_session_token(settings, int(user["id"]), user["email"])
     _purge_user_scan_history(user)
     response = JSONResponse({"message": "Password reset successful.", "user": _serialize_user(user)})
-    response.set_cookie(
-        settings.session_cookie_name,
-        token,
-        httponly=True,
-        secure=settings.session_cookie_secure,
-        samesite="lax",
-        max_age=int(timedelta(hours=settings.session_ttl_hours).total_seconds()),
-    )
+    _set_authenticated_cookies(response, token)
     return response
 
 
@@ -1452,21 +1489,14 @@ def verify_code(request: Request, payload: AuthVerifyRequest) -> Response:
     token = create_session_token(settings, int(user["id"]), user["email"])
     _purge_user_scan_history(user)
     response = JSONResponse({"message": "Authentication successful.", "user": _serialize_user(user)})
-    response.set_cookie(
-        settings.session_cookie_name,
-        token,
-        httponly=True,
-        secure=settings.session_cookie_secure,
-        samesite="lax",
-        max_age=int(timedelta(hours=settings.session_ttl_hours).total_seconds()),
-    )
+    _set_authenticated_cookies(response, token)
     return response
 
 
 @app.post("/api/auth/logout")
 def logout() -> Response:
     response = JSONResponse({"message": "Logged out."})
-    response.delete_cookie(settings.session_cookie_name)
+    _delete_auth_cookies(response)
     return response
 
 

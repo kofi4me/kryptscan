@@ -11,6 +11,9 @@ from collections import defaultdict, deque
 from app.config import Settings
 
 
+PASSWORD_HASH_ITERATIONS = 600_000
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -26,8 +29,8 @@ def hash_verification_code(secret: str, email: str, code: str) -> str:
 
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 210_000)
-    return f"pbkdf2_sha256$210000${_b64url_encode(salt)}${_b64url_encode(digest)}"
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS)
+    return f"pbkdf2_sha256${PASSWORD_HASH_ITERATIONS}${_b64url_encode(salt)}${_b64url_encode(digest)}"
 
 
 def verify_password(password: str, password_hash: str | None) -> bool:
