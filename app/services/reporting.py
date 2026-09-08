@@ -182,7 +182,13 @@ def _validated_finding(finding: Finding) -> Finding:
                 "remediation": _service_remediation(finding),
             }
         )
-    status = "CONFIRMED" if finding.cve or finding.cvss_vector or _has_pattern(text, CONFIRMED_EVIDENCE_PATTERNS) else "POTENTIAL"
+    status = (
+        finding.validation_status
+        if finding.validation_status in {"CONFIRMED", "LIKELY"}
+        else "CONFIRMED"
+        if finding.cve or finding.cvss_vector or _has_pattern(text, CONFIRMED_EVIDENCE_PATTERNS)
+        else "POTENTIAL"
+    )
     confidence = 90 if status == "CONFIRMED" else 55
     return finding.model_copy(
         update={

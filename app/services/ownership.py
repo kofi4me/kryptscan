@@ -69,7 +69,7 @@ def build_scan_protocols(asset_type: str, target_kind: str, assessment_mode: str
     assessment_mode = normalize_assessment_mode(assessment_mode)
     if assessment_mode == "ethical_pentesting":
         protocols = [
-            "Verified account, completed payment, and authorized target validation",
+            "Verified account and authorized target validation",
             "Scoped reconnaissance limited to the approved target",
             "Network, service, web, API, and identity surface mapping",
             "Known vulnerability validation using non-destructive evidence",

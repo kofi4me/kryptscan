@@ -680,11 +680,24 @@ def _enrich_report_for_scan(
         except json.JSONDecodeError:
             testing_context = {}
     if mode == "ethical_pentesting":
+        depth_label = (testing_context.get("pentest_depth") or "standard").replace("_", " ").title()
+        validation_label = (testing_context.get("validation_mode") or "safe_validation").replace("_", " ").title()
+        focus_label = testing_context.get("vulnerability_focus") or "web, API, network, TLS, identity, cloud, code, and secrets"
+        scope_summary = (
+            f"Ethical Pen-Testing engagement for {scan['normalized_target']}. "
+            f"Scope: {engagement['scope_notes'] if engagement else 'approved target and submitted rules of engagement'}. "
+            f"Depth: {depth_label}. Validation mode: {validation_label}. "
+            f"Focus areas: {focus_label}. "
+            f"Authorization: {engagement['authorization_reference'] if engagement else scan['authorization_method']}."
+        )
         methodology = [
             "Engagement intake and rules-of-engagement confirmation",
+            f"Testing depth confirmed as {depth_label}; validation mode confirmed as {validation_label}",
+            "Authorization, scope boundaries, and emergency stop conditions reviewed before active testing",
             "Full-stack web, API, network, identity, and cloud-oriented review planning",
             *methodology,
-            "Manual tester evidence review and client-ready remediation mapping",
+            "Manual tester evidence review, finding validation, and client-ready remediation mapping",
+            "Retesting candidates identified for post-remediation verification",
         ]
         if testing_context.get("api_base_url"):
             methodology.append(f"API endpoint testing included for {testing_context['api_base_url']}.")
@@ -692,6 +705,8 @@ def _enrich_report_for_scan(
             methodology.append("Authenticated testing was approved, using only client-approved test account context.")
         if testing_context.get("critical_workflows"):
             methodology.append(f"Business workflow review focus: {testing_context['critical_workflows']}.")
+        if testing_context.get("known_vulnerabilities"):
+            methodology.append(f"Known vulnerability validation requested for: {testing_context['known_vulnerabilities']}.")
     limitations = list(report.limitations)
     if engagement:
         limitations.append(f"Emergency contact on record: {engagement['emergency_contact']}.")
@@ -700,9 +715,27 @@ def _enrich_report_for_scan(
             limitations.append(f"Out-of-scope boundaries recorded in the rules of engagement: {testing_context['out_of_scope']}.")
         if testing_context.get("emergency_stop"):
             limitations.append(f"Emergency stop instruction: {testing_context['emergency_stop']}.")
+        if testing_context.get("access_notes"):
+            limitations.append(f"Access notes and testing constraints: {testing_context['access_notes']}.")
         limitations.append("KryptScan ethical pen-testing avoids destructive exploitation, brute force, persistence, and data exfiltration.")
+        limitations.append("Findings marked potential or inconclusive require analyst validation before client enforcement or remediation closure.")
+    executive_summary = report.executive_summary
+    if mode == "ethical_pentesting":
+        manual_count = sum(1 for item in report.findings if item.detected_by and "Manual analyst review" in item.detected_by)
+        diagnostics_note = (
+            f" Assessment coverage is {report.assessment_coverage}% ({report.assessment_coverage_status.lower()}); review diagnostics before treating the test as exhaustive."
+            if report.assessment_coverage_status != "Complete"
+            else " Assessment coverage completed without material scanner diagnostics."
+        )
+        executive_summary = (
+            f"Ethical Pen-Testing was performed against {scan['normalized_target']} under the approved rules of engagement. "
+            f"KryptScan separated confirmed and potential vulnerabilities from observations and scanner diagnostics. "
+            f"{manual_count} analyst-confirmed manual finding(s) are included where tester evidence was supplied."
+            f"{diagnostics_note} Remediation should prioritize confirmed critical/high issues, exploitable exposure paths, and retesting after corrective action."
+        )
     return report.model_copy(
         update={
+            "executive_summary": executive_summary,
             "scope_summary": scope_summary,
             "methodology": methodology,
             "limitations": limitations,
@@ -775,6 +808,10 @@ def _merge_manual_findings(report: AssessmentReport, target: str, rows: list[Row
             category=row["category"],
             host=target,
             service="manual-review",
+            finding_type="VULNERABILITY",
+            validation_status="CONFIRMED",
+            confidence=95,
+            detected_by=["Manual analyst review"],
             description=row["evidence"],
             remediation=row["remediation"],
             evidence="Manual tester evidence",
@@ -2171,6 +2208,10 @@ def create_scan(
     scanner_context = {}
     if assessment_mode == "ethical_pentesting":
         scanner_context = {
+            "pentest_depth": payload.pentest_depth.strip().lower(),
+            "validation_mode": payload.validation_mode.strip().lower(),
+            "vulnerability_focus": ", ".join(focus),
+            "known_vulnerabilities": _clean_optional(payload.known_vulnerabilities),
             "api_base_url": _clean_optional(payload.api_base_url),
             "authenticated_testing_allowed": payload.authenticated_testing_allowed,
             "test_account_username": _clean_optional(payload.test_account_username),

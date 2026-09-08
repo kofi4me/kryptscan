@@ -191,6 +191,25 @@ def _build_pdf_bytes(
             canvas.text(diagnostic.detail, size=9, indent=16, color=(0.35, 0.40, 0.45))
         canvas.divider()
 
+    if assessment_mode in {"ethical_pentesting", "authorized_pentest"}:
+        canvas.text("Rules of Engagement & Validation Approach", size=14, bold=True)
+        canvas.text(
+            "This ethical pen-testing report separates verified vulnerabilities, exposure observations, inconclusive tests, and KryptScan scanner diagnostics. Testing is documented as non-destructive unless the approved scope states otherwise.",
+            size=10,
+            indent=8,
+        )
+        canvas.text(
+            "Use confirmed and high-confidence findings for immediate remediation. Use potential or inconclusive findings for analyst validation before declaring client impact.",
+            size=10,
+            indent=8,
+        )
+        canvas.text(
+            "After remediation, rerun targeted retesting for the affected services, application paths, controls, or CVEs and retain the retest result as closure evidence.",
+            size=10,
+            indent=8,
+        )
+        canvas.divider()
+
     if report.methodology:
         canvas.text("Methodology", size=14, bold=True)
         for item in report.methodology:
