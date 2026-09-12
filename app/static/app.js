@@ -921,16 +921,11 @@ function renderDashboard(payload) {
   document.getElementById("manual-finding-form").classList.toggle("hidden", clientOnly || !state.activeScanId);
   document.getElementById("client-portal-panel").classList.toggle("hidden", !clientOnly);
   selectAssessmentMode(state.assessmentMode);
-  renderProfiles(payload.profiles || []);
   renderCommercialReadiness(payload);
   renderMembers([]);
   renderPayments(payload.payments || []);
 
   const statsGrid = document.getElementById("stats-grid");
-  const toolchainGrid = document.getElementById("toolchain-grid");
-  if (toolchainGrid) {
-    toolchainGrid.innerHTML = "";
-  }
   const severity = payload.stats.latest_severity_counts || {};
   const cards = [
     ["Authorized Assets", payload.stats.authorized_assets ?? 0],
@@ -1167,22 +1162,6 @@ function renderPayments(payments) {
         )
         .join("")
     : "";
-}
-
-function renderProfiles(profiles) {
-  const element = document.getElementById("profile-grid");
-  if (!element) return;
-  element.innerHTML = profiles
-    .map(
-      (profile) => `
-        <article class="profile-card">
-          <strong>${escapeHtml(profile.name)}</strong>
-          <div class="meta-line">${escapeHtml((profile.categories || []).join(" - "))}</div>
-          <p>${escapeHtml(profile.summary)}</p>
-        </article>
-      `
-    )
-    .join("");
 }
 
 function renderReport(report) {
