@@ -22,6 +22,7 @@
       <div class="nav-actions">
         <button id="nav-signin-button" class="nav-button outline" type="button" data-auth-mode="signin">Sign In</button>
         <button id="nav-signup-button" class="nav-button solid" type="button" data-auth-mode="signup">Sign Up</button>
+        <button id="nav-logout-button" class="nav-button outline hidden" type="button">Log Out</button>
       </div>
     </header>
 
@@ -552,6 +553,14 @@
           <div id="profile-grid" class="profile-grid"></div>
           <div id="scanner-health-grid" class="toolchain-grid"></div>
           <div id="toolchain-grid" class="toolchain-grid"></div>
+          <div id="download-status" class="download-status hidden" role="status" aria-live="polite">
+            <div class="download-status-line">
+              <strong>Preparing PDF download</strong>
+              <span id="download-status-percent">0%</span>
+            </div>
+            <div class="download-track"><span id="download-status-fill"></span></div>
+            <p id="download-status-message">Starting secure download.</p>
+          </div>
           <div id="stats-grid" class="stats-grid"></div>
         </article>
 

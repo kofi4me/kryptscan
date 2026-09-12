@@ -44,6 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.getElementById("logout-button").addEventListener("click", handleLogout);
   document.getElementById("choice-logout-button").addEventListener("click", handleLogout);
+  document.getElementById("nav-logout-button")?.addEventListener("click", handleLogout);
   document.getElementById("report-download-button").addEventListener("click", () => {
     if (state.activeScanId) downloadReport(state.activeScanId);
   });
@@ -157,6 +158,12 @@ function showOnly(sectionId) {
     const element = document.getElementById(id);
     if (element) element.classList.toggle("hidden", id !== sectionId);
   });
+}
+
+function updateAuthNav(isAuthenticated) {
+  document.getElementById("nav-signin-button")?.classList.toggle("hidden", isAuthenticated);
+  document.getElementById("nav-signup-button")?.classList.toggle("hidden", isAuthenticated);
+  document.getElementById("nav-logout-button")?.classList.toggle("hidden", !isAuthenticated);
 }
 
 function openAuthModal(mode = "signup") {
@@ -770,6 +777,7 @@ async function handleLogout() {
   state.dashboard = null;
   state.activeReport = null;
   state.activeScanId = null;
+  updateAuthNav(false);
   showOnly("landing-page");
   setStatus("auth-status", "You have been logged out.", "neutral");
 }
@@ -777,14 +785,16 @@ async function handleLogout() {
 async function loadDashboard(showStatus = false, options = {}) {
   const response = await fetch("/api/dashboard");
   if (!response.ok) {
+    updateAuthNav(false);
     showOnly("landing-page");
     return;
   }
 
   const payload = await response.json();
   state.dashboard = payload;
+  updateAuthNav(true);
   renderDashboard(payload);
-  await loadScannerHealth();
+  renderScannerHealthSummary();
   if (payload.user?.role === "client_viewer") {
     showDashboardPage();
     await loadClientPortal();
@@ -920,17 +930,7 @@ function renderDashboard(payload) {
   const statsGrid = document.getElementById("stats-grid");
   const toolchainGrid = document.getElementById("toolchain-grid");
   if (toolchainGrid) {
-    toolchainGrid.innerHTML = (payload.toolchain || [])
-      .map(
-        (item) => `
-          <article class="tool-card">
-            <strong>${escapeHtml(item.category)}</strong>
-            <div class="meta-line">${escapeHtml((item.tools || []).join(" - "))}</div>
-            <p>${escapeHtml(item.purpose)}</p>
-          </article>
-        `
-      )
-      .join("");
+    toolchainGrid.innerHTML = "";
   }
   const severity = payload.stats.latest_severity_counts || {};
   const cards = [
@@ -999,11 +999,6 @@ function renderDashboard(payload) {
           <div class="scan-actions">
             <button type="button" onclick="refreshScan(${scan.id})">Refresh</button>
             <button type="button" class="ghost" onclick="loadReport(${scan.id})">View Report</button>
-            ${
-              scan.report_pdf_available
-                ? `<button type="button" class="ghost" onclick="downloadReport(${scan.id})">Download PDF</button>`
-                : ""
-            }
           </div>
         </article>
       `
@@ -1046,6 +1041,18 @@ function renderScannerHealth(payload) {
         }
       )
       .join("")}
+  `;
+}
+
+function renderScannerHealthSummary() {
+  const element = document.getElementById("scanner-health-grid");
+  if (!element) return;
+  element.innerHTML = `
+    <article class="readiness-card scanner-summary-card">
+      <strong>Scanner Ready</strong>
+      <span class="pill completed">Connected</span>
+      <p>KryptScan uses a managed scanner worker to run the approved assessment workflow. Technical tool details are monitored by KryptNet administrators.</p>
+    </article>
   `;
 }
 
@@ -1547,8 +1554,61 @@ function formatTier(tier) {
   return "Full Scan";
 }
 
-function downloadReport(scanId) {
-  window.location.assign(`/api/reports/${scanId}/pdf`);
+function setDownloadStatus(visible, percent = 0, message = "") {
+  const panel = document.getElementById("download-status");
+  const fill = document.getElementById("download-status-fill");
+  const percentLabel = document.getElementById("download-status-percent");
+  const messageLabel = document.getElementById("download-status-message");
+  if (!panel || !fill || !percentLabel || !messageLabel) return;
+  panel.classList.toggle("hidden", !visible);
+  const normalized = Math.max(0, Math.min(100, Number(percent) || 0));
+  fill.style.width = `${normalized}%`;
+  percentLabel.textContent = `${Math.round(normalized)}%`;
+  messageLabel.textContent = message;
+}
+
+function filenameFromDisposition(headerValue, fallback) {
+  const match = /filename="?([^";]+)"?/i.exec(headerValue || "");
+  return match ? match[1] : fallback;
+}
+
+async function downloadReport(scanId) {
+  const button = document.getElementById("report-download-button");
+  setButtonBusy("report-download-button", true, "Downloading...");
+  setDownloadStatus(true, 12, "Requesting the PDF report.");
+  try {
+    const response = await fetch(`/api/reports/${scanId}/pdf`, { headers: csrfHeaders() });
+    if (!response.ok) {
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch (_error) {
+        payload = {};
+      }
+      setStatus("dashboard-status", formatApiError(payload, "Unable to download PDF report."), "error");
+      setDownloadStatus(true, 100, "Download could not be completed.");
+      return;
+    }
+    setDownloadStatus(true, 58, "PDF report received. Preparing your file.");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filenameFromDisposition(response.headers.get("content-disposition"), `kryptscan-report-${scanId}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setDownloadStatus(true, 100, "PDF download completed.");
+    setStatus("dashboard-status", "PDF report download completed.", "success");
+    window.alert("PDF report download completed.");
+    window.setTimeout(() => setDownloadStatus(false), 3500);
+  } catch (error) {
+    setStatus("dashboard-status", `PDF download failed: ${error.message || error}`, "error");
+    setDownloadStatus(true, 100, "Download failed. Please try again.");
+  } finally {
+    if (button) setButtonBusy("report-download-button", false);
+  }
 }
 
 async function emailReport(scanId) {
