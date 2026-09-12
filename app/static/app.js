@@ -925,7 +925,6 @@ function renderDashboard(payload) {
   renderCommercialReadiness(payload);
   renderMembers([]);
   renderPayments(payload.payments || []);
-  renderAudit(payload.audit_events || []);
 
   const statsGrid = document.getElementById("stats-grid");
   const toolchainGrid = document.getElementById("toolchain-grid");
@@ -1184,26 +1183,6 @@ function renderProfiles(profiles) {
       `
     )
     .join("");
-}
-
-function renderAudit(events) {
-  const element = document.getElementById("audit-list");
-  if (!element) return;
-  element.innerHTML = events.length
-    ? events
-        .map(
-          (event) => `
-            <article class="check-card">
-              <div class="meta-line">
-                <strong>${escapeHtml(event.action)}</strong>
-                <span>${new Date(event.created_at).toLocaleString()}</span>
-              </div>
-              <p>${escapeHtml(JSON.stringify(event.details || {}))}</p>
-            </article>
-          `
-        )
-        .join("")
-    : `<div class="check-card">No audit events yet.</div>`;
 }
 
 function renderReport(report) {
