@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("admin-login-form").addEventListener("submit", handleAdminLogin);
   document.getElementById("admin-refresh-button").addEventListener("click", loadAdminDashboard);
   document.getElementById("admin-logout-button").addEventListener("click", handleAdminLogout);
+  document.getElementById("admin-coupon-form").addEventListener("submit", handleCreateCoupon);
   await ensureCsrfCookie();
   await loadAdminSession();
 });
@@ -115,11 +116,12 @@ async function loadAdminSession() {
 
 async function loadAdminDashboard() {
   setBusy("admin-refresh-button", true, "Refreshing...");
-  const [overviewResult, usersResult, scansResult, eventsResult] = await Promise.all([
+  const [overviewResult, usersResult, scansResult, eventsResult, couponsResult] = await Promise.all([
     fetchJson("/api/admin/security-overview", { method: "GET" }),
     fetchJson("/api/admin/users", { method: "GET" }),
     fetchJson("/api/admin/scans", { method: "GET" }),
     fetchJson("/api/admin/audit-events", { method: "GET" }),
+    fetchJson("/api/admin/coupons", { method: "GET" }),
   ]);
   setBusy("admin-refresh-button", false);
   if (!overviewResult.response.ok) {
@@ -133,6 +135,41 @@ async function loadAdminDashboard() {
   renderUsers(usersResult.payload.users || []);
   renderScans(scansResult.payload.scans || []);
   renderEvents(eventsResult.payload.events || overviewResult.payload.recent_events || []);
+  renderCoupons(couponsResult.payload.coupons || []);
+}
+
+async function handleCreateCoupon(event) {
+  event.preventDefault();
+  setBusy("admin-coupon-button", true, "Creating...");
+  const expiryValue = document.getElementById("admin-coupon-expiry").value;
+  const { response, payload } = await fetchJson("/api/admin/coupons", {
+    method: "POST",
+    body: JSON.stringify({
+      code: document.getElementById("admin-coupon-code").value.trim(),
+      label: document.getElementById("admin-coupon-label").value.trim(),
+      credit_amount: Number(document.getElementById("admin-coupon-credits").value),
+      max_redemptions: Number(document.getElementById("admin-coupon-limit").value),
+      expires_at: expiryValue ? new Date(expiryValue).toISOString() : null,
+    }),
+  });
+  setBusy("admin-coupon-button", false);
+  const result = document.getElementById("admin-coupon-result");
+  if (!response.ok) {
+    result.textContent = payload.detail || "Unable to create coupon.";
+    result.dataset.tone = "error";
+    return;
+  }
+  result.textContent = `Coupon ${payload.code} created for ${payload.credit_amount} credits. Record this code now; it is not stored in readable form.`;
+  result.dataset.tone = "success";
+  document.getElementById("admin-coupon-code").value = "";
+  await loadAdminDashboard();
+}
+
+function renderCoupons(coupons) {
+  const element = document.getElementById("admin-coupon-list");
+  element.innerHTML = coupons.length
+    ? coupons.map((coupon) => `<div><strong>${escapeHtml(coupon.label)}</strong><span>${coupon.credit_amount} credits · ${coupon.redemption_count}/${coupon.max_redemptions} used · ${coupon.active ? "Active" : "Inactive"}${coupon.expires_at ? ` · Expires ${formatDate(coupon.expires_at)}` : ""}</span></div>`).join("")
+    : "<p>No coupons created.</p>";
 }
 
 async function handleAdminLogout() {

@@ -9,7 +9,7 @@ import shutil
 import time
 import urllib.error
 import urllib.request
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from sqlite3 import Row
 from urllib.parse import urlparse
@@ -29,6 +29,8 @@ from app.models import (
     AuthVerifyRequest,
     AuditEventSummary,
     ClientPortalResponse,
+    CouponCreateRequest,
+    CouponRedeemRequest,
     DashboardResponse,
     EngagementCreateRequest,
     EngagementSummary,
@@ -47,6 +49,7 @@ from app.models import (
     RegistrationRequest,
     RegistrationProfileRequest,
     ScanCreateRequest,
+    ScanQuoteRequest,
     ScanSummary,
     SeverityCounts,
 )
@@ -67,6 +70,17 @@ from app.services.ownership import (
 )
 from app.services.pdf_report import write_pdf_report
 from app.services.json_report import write_json_report
+from app.services.credits import (
+    CREDIT_CATALOG,
+    coupon_hash,
+    create_quote,
+    finalize_scan_credits,
+    load_valid_quote,
+    redeem_coupon,
+    refund_scan_credits,
+    reserve_scan_credits,
+    wallet_snapshot,
+)
 from app.services.reporting import build_assessment_report
 from app.services.scanners import get_scanner_provider, greenbone_is_available, resolve_backend_name
 from app.services.toolchain import get_assessment_profiles, get_ethical_pentest_toolchain
@@ -517,6 +531,13 @@ def _plan_details(plan: str) -> dict:
     return plan
 
 
+PUBLIC_PRICING_PLANS = [
+    {"id": "professional", "name": "Professional", "price_usd_monthly": 79, "credits": 10, "audience": "IT professionals and small businesses"},
+    {"id": "business", "name": "Business", "price_usd_monthly": 199, "credits": 30, "audience": "Internal security teams"},
+    {"id": "msp", "name": "MSP", "price_usd_monthly": 499, "credits": 100, "audience": "Consultants and managed service providers"},
+]
+
+
 def _require_owner_or_analyst(user: Row) -> None:
     if user["role"] not in {"owner", "analyst"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner or analyst role required.")
@@ -605,7 +626,10 @@ def _summary_from_row(scan: Row) -> ScanSummary:
         risk_score=risk_score,
         severity_counts=counts,
         report_pdf_available=bool(scan["report_pdf_path"]),
-        report_json_available=bool(scan["report_json_path"] or scan["report_json"]),
+        report_json_available=bool(
+            (scan["scan_tier"] or "full_scan") != "free_preview"
+            and (scan["report_json_path"] or scan["report_json"])
+        ),
         report_email_sent_at=scan["report_email_sent_at"],
         report_email_error=scan["report_email_error"],
         progress_percent=int(scan["progress_percent"] or 0),
@@ -1049,16 +1073,6 @@ def _store_completed_scan(
                 report=persisted_report,
                 notify_user=notify_user,
             )
-        else:
-            completed_scan = dict(scan)
-            completed_scan.update({"status": "completed", "completed_at": completed_at})
-            mode = normalize_assessment_mode(scan["assessment_mode"])
-            json_path = _report_path_for_scan(scan_id, mode, scan["created_at"], "json")
-            try:
-                write_json_report(json_path, completed_scan, persisted_report)
-                delivered_json_path = str(json_path)
-            except Exception:
-                logger.exception("JSON report generation failed scan_id=%s", scan_id)
         connection.execute(
             """
             UPDATE scans
@@ -1087,6 +1101,7 @@ def _store_completed_scan(
                 scan_id,
             ),
         )
+        finalize_scan_credits(connection, user, scan_id)
         return _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
 
 
@@ -1157,6 +1172,7 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
                 """,
                 (str(exc), f"Scan failed: {str(exc)}", utcnow().isoformat(), scan_id, user["organization_id"]),
             )
+            refund_scan_credits(connection, user, scan_id, "scanner scheduling failure")
             _audit(connection, user, "scan.failed", {"scan_id": scan_id, "error": str(exc)})
         return
 
@@ -1249,6 +1265,7 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
                     """,
                     (str(exc), f"Worker refresh failed: {str(exc)}", utcnow().isoformat(), scan_id, user["organization_id"]),
                 )
+                refund_scan_credits(connection, user, scan_id, "scanner worker refresh failure")
                 _audit(connection, user, "scan.failed", {"scan_id": scan_id, "error": str(exc)})
             return
 
@@ -1310,6 +1327,7 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
                 user["organization_id"],
             ),
         )
+        refund_scan_credits(connection, user, scan_id, "scanner worker timeout")
         _audit(connection, user, "scan.failed", {"scan_id": scan_id, "error": "worker timeout"})
     logger.error("scan timed out scan_id=%s backend=%s task_id=%s", scan_id, scheduled.backend, scheduled.external_task_id)
 
@@ -1348,6 +1366,42 @@ def kryptscan_index(request: Request) -> HTMLResponse:
     return index(request)
 
 
+def _public_page(request: Request, page: str, policy: str | None = None) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "public.html",
+        {"app_name": settings.app_name, "page": page, "policy": policy, "plans": PUBLIC_PRICING_PLANS, "services": CREDIT_CATALOG},
+    )
+
+
+@app.get("/pricing", response_class=HTMLResponse)
+def pricing_page(request: Request) -> HTMLResponse:
+    return _public_page(request, "pricing")
+
+
+@app.get("/about", response_class=HTMLResponse)
+def about_page(request: Request) -> HTMLResponse:
+    return _public_page(request, "about")
+
+
+@app.get("/policies", response_class=HTMLResponse)
+def policies_page(request: Request) -> HTMLResponse:
+    return _public_page(request, "policies")
+
+
+@app.get("/policies/{policy_slug}", response_class=HTMLResponse)
+def policy_page(request: Request, policy_slug: str) -> HTMLResponse:
+    allowed = {"terms", "privacy", "acceptable-use", "credits-refunds", "vulnerability-disclosure"}
+    if policy_slug not in allowed:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Policy not found.")
+    return _public_page(request, "policy", policy_slug)
+
+
+@app.get("/support", response_class=HTMLResponse)
+def support_page(request: Request) -> HTMLResponse:
+    return _public_page(request, "support")
+
+
 @app.get("/kryptnet-admin", response_class=HTMLResponse)
 @app.get("/kryptnet-admin/", response_class=HTMLResponse)
 def admin_index(request: Request) -> HTMLResponse:
@@ -1366,6 +1420,152 @@ def health() -> dict:
         "status": "ok",
         "app": settings.app_name,
         "scanner_backend": settings.scanner_backend,
+    }
+
+
+@app.get("/api/pricing")
+def public_pricing() -> dict:
+    return {
+        "plans": PUBLIC_PRICING_PLANS,
+        "services": [{"id": key, **value} for key, value in CREDIT_CATALOG.items()],
+        "payment_available": False,
+        "currency": "USD",
+    }
+
+
+@app.get("/api/credits/wallet")
+def get_credit_wallet(user: Row = Depends(get_current_user)) -> dict:
+    with get_connection() as connection:
+        balance = wallet_snapshot(connection, user)
+    return {"credit_balance": balance}
+
+
+@app.post("/api/scan-quotes")
+def quote_scan(
+    request: Request,
+    payload: ScanQuoteRequest,
+    user: Row = Depends(get_current_user),
+) -> dict:
+    _rate_limit(request, "scan_quotes.create", limit=30, window_seconds=60)
+    _require_owner_or_analyst(user)
+    _require_completed_registration(user)
+    try:
+        assessment_mode = normalize_assessment_mode(payload.assessment_mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    service_level = payload.service_level.strip().lower()
+    if service_level not in {"standard", "deep"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Service level must be standard or deep.")
+    target = payload.target.strip()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enter a target before requesting a scan estimate.")
+    with get_connection() as connection:
+        quote = create_quote(
+            connection,
+            user,
+            target=target,
+            assessment_mode=assessment_mode,
+            service_level=service_level,
+        )
+        _audit(
+            connection,
+            user,
+            "credits.scan_quoted",
+            {
+                "service": quote["service"]["id"],
+                "credit_cost": quote["service"]["credits"],
+                "free_trial": quote["free_trial"],
+            },
+        )
+    return quote
+
+
+@app.post("/api/credits/redeem")
+def redeem_credit_coupon(
+    request: Request,
+    payload: CouponRedeemRequest,
+    user: Row = Depends(get_current_user),
+) -> dict:
+    _rate_limit(request, "credits.coupon_redeem", limit=10, window_seconds=300)
+    _require_completed_registration(user)
+    with get_connection() as connection:
+        try:
+            result = redeem_coupon(connection, user, payload.code)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        _audit(
+            connection,
+            user,
+            "credits.coupon_redeemed",
+            {"credits_granted": result["credits_granted"], "label": result["label"]},
+        )
+    return result
+
+
+@app.get("/api/admin/coupons")
+def admin_list_coupons(user: Row = Depends(get_current_user)) -> dict:
+    _require_admin(user)
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT id, label, credit_amount, max_redemptions, redemption_count,
+                   expires_at, active, created_at
+            FROM coupons ORDER BY id DESC LIMIT 100
+            """
+        ).fetchall()
+    return {"coupons": [dict(row) for row in rows]}
+
+
+@app.post("/api/admin/coupons")
+def admin_create_coupon(
+    request: Request,
+    payload: CouponCreateRequest,
+    user: Row = Depends(get_current_user),
+) -> dict:
+    _rate_limit(request, "admin.coupons.create", limit=20, window_seconds=60)
+    _require_admin(user)
+    expires_at = payload.expires_at.strip() if payload.expires_at else None
+    if expires_at:
+        try:
+            parsed_expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Coupon expiry must be an ISO-8601 date/time.") from exc
+        if parsed_expiry.tzinfo is None:
+            parsed_expiry = parsed_expiry.replace(tzinfo=utcnow().tzinfo)
+        if parsed_expiry <= utcnow():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Coupon expiry must be in the future.")
+    now = utcnow().isoformat()
+    with get_connection() as connection:
+        try:
+            cursor = connection.execute(
+                """
+                INSERT INTO coupons (
+                    code_hash, label, credit_amount, max_redemptions,
+                    redemption_count, expires_at, active, created_by, created_at
+                ) VALUES (?, ?, ?, ?, 0, ?, 1, ?, ?)
+                """,
+                (
+                    coupon_hash(payload.code), payload.label.strip(), payload.credit_amount,
+                    payload.max_redemptions, expires_at, user["id"], now,
+                ),
+            )
+        except Exception as exc:
+            if "UNIQUE" in str(exc).upper():
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That coupon code already exists.") from exc
+            raise
+        _audit(
+            connection,
+            user,
+            "admin.coupon_created",
+            {"coupon_id": cursor.lastrowid, "credit_amount": payload.credit_amount, "max_redemptions": payload.max_redemptions},
+        )
+    return {
+        "id": cursor.lastrowid,
+        "code": payload.code.strip().upper(),
+        "label": payload.label.strip(),
+        "credit_amount": payload.credit_amount,
+        "max_redemptions": payload.max_redemptions,
+        "expires_at": expires_at,
     }
 
 
@@ -1748,6 +1948,7 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
                 (user["organization_id"], user["id"]),
             ).fetchall()
             entitlement = _active_entitlement(connection, user["organization_id"])
+            credits = wallet_snapshot(connection, user)
             scan_summaries = [_summary_from_row(scan) for scan in scans]
             return DashboardResponse(
                 user=_serialize_user(user),
@@ -1765,6 +1966,7 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
                     "latest_severity_counts": scan_summaries[0].severity_counts if scan_summaries and scan_summaries[0].severity_counts else SeverityCounts(),
                     "payment_required": settings.payment_required,
                     "payment_demo_mode": settings.payment_demo_mode,
+                    "credit_balance": credits,
                 },
                 scans=scan_summaries,
             )
@@ -1837,6 +2039,7 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
             (user["organization_id"], user["id"]),
         ).fetchone()["count"]
         entitlement = _active_entitlement(connection, user["organization_id"])
+        credits = wallet_snapshot(connection, user)
 
     scan_summaries = [_summary_from_row(scan) for scan in scans]
     latest_completed = next((scan for scan in scan_summaries if scan.risk_score is not None), None)
@@ -1852,6 +2055,7 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
         ),
         "payment_required": settings.payment_required,
         "payment_demo_mode": settings.payment_demo_mode,
+        "credit_balance": credits,
     }
 
     return DashboardResponse(
@@ -2385,7 +2589,10 @@ def client_portal(user: Row = Depends(get_current_user)) -> ClientPortalResponse
                 "risk_band": report.risk_band,
                 "completed_at": scan["completed_at"],
                 "pdf_available": bool(scan["report_pdf_path"]),
-                "json_available": bool(scan["report_json_path"] or scan["report_json"]),
+                "json_available": bool(
+                    (scan["scan_tier"] or "full_scan") != "free_preview"
+                    and (scan["report_json_path"] or scan["report_json"])
+                ),
             }
         )
         for item in report.remediation_plan[:5]:
@@ -2548,13 +2755,14 @@ def create_scan(
         assessment_mode = normalize_assessment_mode(payload.assessment_mode)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    scan_tier = payload.scan_tier.strip().lower()
-    if scan_tier != "full_scan":
+    service_level = payload.service_level.strip().lower()
+    if service_level not in {"standard", "deep"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Service level must be standard or deep.")
+    if not payload.quote_token or not payload.credit_charge_accepted:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Free vulnerability testing has been removed. Select Vulnerability Assessment or Ethical Pen-Testing.",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Request a current scan-cost estimate and accept the credit charge before launching.",
         )
-    selected_backend = resolve_backend_name(settings, asset_type, assessment_mode)
     if not payload.target_authorization_accepted:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2577,7 +2785,6 @@ def create_scan(
 
     now = utcnow().isoformat()
     scan_protocols = build_scan_protocols(asset_type, authorization["target_kind"], assessment_mode)
-    scan_protocols.append("Full scan: deeper testing with PDF report delivery to verified email")
     if assessment_mode == "ethical_pentesting":
         depth = payload.pentest_depth.strip().lower()
         if depth not in {"standard", "deep"}:
@@ -2658,9 +2865,10 @@ def create_scan(
         report_emergency_contact,
     ]
     report_intake_requested = any(report_values)
-    scanner_context = {}
+    scanner_context = {"service_level": service_level}
     if assessment_mode == "ethical_pentesting":
         scanner_context = {
+            "service_level": service_level,
             "pentest_depth": payload.pentest_depth.strip().lower(),
             "validation_mode": payload.validation_mode.strip().lower(),
             "vulnerability_focus": ", ".join(focus),
@@ -2697,9 +2905,30 @@ def create_scan(
             )
 
     with get_connection() as connection:
-        if scan_tier == "full_scan":
-            _require_entitlement(connection, user)
-        _require_launch_scan_quota(connection, user)
+        quote = load_valid_quote(
+            connection,
+            user,
+            quote_token=payload.quote_token,
+            target=payload.target,
+            assessment_mode=assessment_mode,
+            service_level=service_level,
+        )
+        if quote is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The scan-cost estimate is missing, expired, or no longer matches this request. Request a new estimate.",
+            )
+        scan_tier = quote["scan_tier"]
+        if scan_tier == "free_preview" and report_intake_requested:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The free basic assessment provides a simple web-only summary and does not accept client report details.",
+            )
+        selected_backend = "free_preview" if scan_tier == "free_preview" else resolve_backend_name(settings, asset_type, assessment_mode)
+        if scan_tier == "free_preview":
+            scan_protocols.append("Free basic vulnerability assessment: web-only summary without PDF, JSON, email, AI, or deep scanning")
+        else:
+            scan_protocols.append(f"{service_level.title()} paid assessment with downloadable PDF and JSON reports")
         connection.execute(
             """
             INSERT INTO targets (
@@ -2833,6 +3062,11 @@ def create_scan(
         )
         scan_id = cursor.lastrowid
 
+        try:
+            reserve_scan_credits(connection, user, quote, scan_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(exc)) from exc
+
         scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
         _audit(
             connection,
@@ -2843,7 +3077,8 @@ def create_scan(
                 "target": authorization["normalized_target"],
                 "mode": assessment_mode,
                 "tier": scan_tier,
-                "limit": settings.launch_scan_limit_per_user,
+                "service_level": service_level,
+                "credit_cost": int(quote["credit_cost"] or 0),
             },
         )
         _audit(
@@ -2856,6 +3091,7 @@ def create_scan(
                 "mode": assessment_mode,
                 "tier": scan_tier,
                 "engagement_id": engagement_id,
+                "credit_cost": int(quote["credit_cost"] or 0),
             },
         )
 
@@ -2990,6 +3226,7 @@ def refresh_scan(
                     "UPDATE scans SET status = 'failed', error_message = ?, progress_message = ?, refreshed_at = ? WHERE id = ?",
                     (str(exc), f"Worker refresh failed: {str(exc)}", utcnow().isoformat(), scan_id),
                 )
+                refund_scan_credits(connection, user, scan_id, "manual worker refresh failure")
                 scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
             return _summary_from_row(scan)
     else:
@@ -3007,6 +3244,7 @@ def refresh_scan(
                     "UPDATE scans SET status = 'failed', error_message = ?, refreshed_at = ? WHERE id = ?",
                     (str(exc), utcnow().isoformat(), scan_id),
                 )
+                refund_scan_credits(connection, user, scan_id, "manual scanner refresh failure")
                 scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
             return _summary_from_row(scan)
 
@@ -3080,6 +3318,11 @@ def download_report_json(scan_id: int, user: Row = Depends(get_current_user)) ->
         scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
         if scan is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
+        if (scan["scan_tier"] or "full_scan") == "free_preview":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="The free basic assessment includes a web-only summary. JSON export requires a paid scan.",
+            )
         report = _get_report_for_scan(scan)
         if report is None or scan["status"] != "completed":
             raise HTTPException(

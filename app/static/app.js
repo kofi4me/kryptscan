@@ -9,6 +9,9 @@ const state = {
   refreshTimer: null,
   verificationTimer: null,
   verificationExpiresAt: null,
+  scanQuote: null,
+  quoteTimer: null,
+  quoteRequestId: 0,
 };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -37,6 +40,12 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("password-reset-request-form").addEventListener("submit", handlePasswordResetRequest);
   document.getElementById("password-reset-confirm-form").addEventListener("submit", handlePasswordResetConfirm);
   document.getElementById("scan-form").addEventListener("submit", handleCreateScan);
+  document.getElementById("target-input").addEventListener("input", scheduleScanQuote);
+  document.getElementById("service-level-input").addEventListener("change", requestScanQuote);
+  document.getElementById("pentest-depth-input").addEventListener("change", requestScanQuote);
+  document.getElementById("target-authorization-input").addEventListener("change", updateScanActionState);
+  document.getElementById("credit-charge-accepted-input").addEventListener("change", updateScanActionState);
+  document.getElementById("coupon-form").addEventListener("submit", handleCouponRedemption);
   document.getElementById("report-intake-toggle-button").addEventListener("click", toggleReportIntake);
   document.getElementById("manual-finding-form").addEventListener("submit", handleAddManualFinding);
   document.querySelectorAll("[data-plan]").forEach((button) => {
@@ -62,6 +71,8 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   initDashboardMockup();
   ensureCsrfCookie().then(() => loadDashboard(false, { showChoiceWhenAuthenticated: true }));
+  const requestedAuthMode = new URLSearchParams(window.location.search).get("auth");
+  if (["signin", "signup"].includes(requestedAuthMode)) openAuthModal(requestedAuthMode);
 });
 
 function getCookie(name) {
@@ -324,6 +335,7 @@ function selectAssessmentMode(mode) {
   }
   if (state.dashboard) {
     renderCommercialReadiness(state.dashboard);
+    requestScanQuote();
   }
 }
 
@@ -375,6 +387,109 @@ function updateScanSubmitText() {
     submit.textContent = "Run Ethical Pen-Testing";
   } else {
     submit.textContent = "Run Vulnerability Assessment";
+  }
+  updateScanActionState();
+}
+
+function clearScanQuote(message = "Enter a target to calculate the required credits.") {
+  state.scanQuote = null;
+  const card = document.getElementById("scan-cost-card");
+  const accepted = document.getElementById("credit-charge-accepted-input");
+  if (accepted) accepted.checked = false;
+  if (card) card.classList.add("hidden");
+  document.getElementById("optional-report-actions")?.classList.remove("hidden");
+  const detail = document.getElementById("scan-cost-detail");
+  if (detail) detail.textContent = message;
+  updateScanActionState();
+}
+
+function scheduleScanQuote() {
+  clearScanQuote();
+  if (state.quoteTimer) window.clearTimeout(state.quoteTimer);
+  state.quoteTimer = window.setTimeout(requestScanQuote, 650);
+}
+
+async function requestScanQuote() {
+  const target = document.getElementById("target-input")?.value.trim() || "";
+  if (!state.dashboard || target.length < 3) {
+    clearScanQuote();
+    return;
+  }
+  const assessmentMode = document.getElementById("assessment-mode-input").value;
+  const serviceLevel = document.getElementById("service-level-input").value;
+  clearScanQuote("Calculating the required credits...");
+  const requestId = ++state.quoteRequestId;
+  const { response, payload } = await fetchJson("/api/scan-quotes", {
+    method: "POST",
+    body: JSON.stringify({
+      target,
+      assessment_mode: assessmentMode,
+      service_level: serviceLevel,
+      pentest_depth: document.getElementById("pentest-depth-input")?.value || "standard",
+    }),
+  });
+  if (
+    requestId !== state.quoteRequestId ||
+    target !== document.getElementById("target-input").value.trim() ||
+    assessmentMode !== document.getElementById("assessment-mode-input").value ||
+    serviceLevel !== document.getElementById("service-level-input").value
+  ) return;
+  if (!response.ok) {
+    clearScanQuote(formatApiError(payload, "Unable to calculate the scan cost."));
+    setStatus("dashboard-status", formatApiError(payload, "Unable to calculate the scan cost."), "error");
+    return;
+  }
+  state.scanQuote = payload;
+  document.getElementById("optional-report-actions")?.classList.toggle("hidden", payload.free_trial);
+  if (payload.free_trial && state.reportIntakeEnabled) {
+    state.reportIntakeEnabled = false;
+    updateReportIntakeVisibility();
+  }
+  document.getElementById("scan-cost-card").classList.remove("hidden");
+  document.getElementById("scan-cost-service").textContent = payload.service.name;
+  document.getElementById("scan-cost-value").textContent = payload.service.credits;
+  document.getElementById("credit-charge-accepted-input").checked = false;
+  document.getElementById("credit-charge-label").textContent = payload.free_trial
+    ? "I accept this one-time free basic assessment and its web-only report limits."
+    : `I accept the ${payload.service.credits}-credit charge for this scan.`;
+  document.getElementById("scan-cost-detail").textContent = payload.sufficient_credits
+    ? payload.free_trial
+      ? "No credits will be charged. PDF, JSON, email, AI, and deep scanning are not included."
+      : `Current balance: ${payload.credit_balance.total}. Balance after scan: ${payload.balance_after}.`
+    : `This scan requires ${payload.service.credits} credits, but your current balance is ${payload.credit_balance.total}. Redeem a coupon or purchase credits when checkout opens.`;
+  document.getElementById("credit-balance-value").textContent = payload.credit_balance.total;
+  updateScanActionState();
+}
+
+function updateScanActionState() {
+  const submit = document.getElementById("scan-submit-button");
+  if (!submit) return;
+  const authorized = Boolean(document.getElementById("target-authorization-input")?.checked);
+  const accepted = Boolean(document.getElementById("credit-charge-accepted-input")?.checked);
+  submit.disabled = !(state.scanQuote?.sufficient_credits && authorized && accepted);
+}
+
+async function handleCouponRedemption(event) {
+  event.preventDefault();
+  const code = document.getElementById("coupon-code-input").value.trim();
+  if (!code) return;
+  setButtonBusy("coupon-redeem-button", true, "Redeeming...");
+  try {
+    const { response, payload } = await fetchJson("/api/credits/redeem", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+    if (!response.ok) {
+      setStatus("dashboard-status", formatApiError(payload, "Unable to redeem coupon."), "error");
+      return;
+    }
+    document.getElementById("coupon-code-input").value = "";
+    document.getElementById("credit-balance-value").textContent = payload.credit_balance.total;
+    setStatus("dashboard-status", `${payload.credits_granted} promotional credits added from ${payload.label}.`, "success");
+    await loadDashboard(false);
+    await requestScanQuote();
+  } finally {
+    setButtonBusy("coupon-redeem-button", false);
   }
 }
 
@@ -674,7 +789,7 @@ async function handleCreateScan(event) {
     return;
   }
   const assessment_mode = document.getElementById("assessment-mode-input").value;
-  const scan_tier = "full_scan";
+  const service_level = document.getElementById("service-level-input").value;
   const targetAuthorizationAccepted = document.getElementById("target-authorization-input").checked;
   if (!targetAuthorizationAccepted) {
     setStatus("dashboard-status", "Confirm target ownership or written authorization before launching the assessment.", "error");
@@ -684,7 +799,9 @@ async function handleCreateScan(event) {
   const body = {
     target,
     assessment_mode,
-    scan_tier,
+    service_level,
+    quote_token: state.scanQuote?.quote_token || null,
+    credit_charge_accepted: document.getElementById("credit-charge-accepted-input").checked,
     target_authorization_accepted: targetAuthorizationAccepted,
   };
   if (state.reportIntakeEnabled) {
@@ -749,6 +866,7 @@ async function handleCreateScan(event) {
       "success"
     );
     state.activeScanId = payload.id;
+    clearScanQuote("Request a new estimate before launching another scan.");
     selectAssessmentMode(state.assessmentMode);
     selectScanTier("full_scan", { silent: true });
     await loadDashboard(false);
@@ -768,6 +886,7 @@ async function handleCreateScan(event) {
     );
   } finally {
     setButtonBusy("scan-submit-button", false);
+    updateScanActionState();
   }
 }
 
@@ -780,6 +899,7 @@ async function handleLogout() {
   state.dashboard = null;
   state.activeReport = null;
   state.activeScanId = null;
+  state.scanQuote = null;
   updateAuthNav(false);
   showOnly("landing-page");
   setStatus("auth-status", "You have been logged out.", "neutral");
@@ -919,6 +1039,8 @@ function renderDashboard(payload) {
   ).textContent = `${payload.organization.name} Security Command`;
   const clientOnly = payload.user?.role === "client_viewer";
   const paymentRequired = Boolean(payload.stats?.payment_required && !payload.stats?.payment_demo_mode);
+  const creditBalance = payload.stats?.credit_balance?.total ?? 0;
+  document.getElementById("credit-balance-value").textContent = creditBalance;
   document.getElementById("payment-panel").classList.toggle("hidden", payload.user?.role !== "owner" || !paymentRequired);
   document.getElementById("scan-form").classList.toggle("hidden", clientOnly);
   document.getElementById("manual-finding-form").classList.toggle("hidden", clientOnly || !state.activeScanId);
@@ -927,6 +1049,7 @@ function renderDashboard(payload) {
   renderCommercialReadiness(payload);
   renderMembers([]);
   renderPayments(payload.payments || []);
+  updateScanActionState();
 
   const statsGrid = document.getElementById("stats-grid");
   const severity = payload.stats.latest_severity_counts || {};

@@ -19,6 +19,12 @@
       <a class="brand-lockup" href="/" aria-label="KryptScan home">
         <img class="brand-logo" src="/static/images/kryptscan-logo.png" alt="KryptScan" />
       </a>
+      <nav class="public-nav" aria-label="Public navigation">
+        <a href="/pricing">Pricing</a>
+        <a href="/about">About</a>
+        <a href="/policies">Policies</a>
+        <a href="/support">Support</a>
+      </nav>
       <div class="nav-actions">
         <button id="nav-signin-button" class="nav-button outline" type="button" data-auth-mode="signin">Sign In</button>
         <button id="nav-signup-button" class="nav-button solid" type="button" data-auth-mode="signup">Sign Up</button>
@@ -122,6 +128,10 @@
         <footer class="site-footer">
           <img src="/static/images/kryptscan-logo.png" alt="KryptScan" />
           <nav aria-label="Footer links">
+            <a href="/pricing">Pricing</a>
+            <a href="/about">About</a>
+            <a href="/policies">Policies</a>
+            <a href="/support">Support</a>
             <button type="button" data-auth-mode="signup">Create Account</button>
             <button type="button" data-auth-mode="signin">Sign In</button>
           </nav>
@@ -345,7 +355,13 @@
                 Select the assessment mode, then enter one authorized domain name or IP address.
               </p>
             </div>
-            <button id="logout-button" class="ghost">Log Out</button>
+            <div class="workspace-account-actions">
+              <div class="credit-balance-badge">
+                <span>Available credits</span>
+                <strong id="credit-balance-value">0</strong>
+              </div>
+              <button id="logout-button" class="ghost">Log Out</button>
+            </div>
           </div>
 
           <div class="mode-selector" aria-label="Assessment mode">
@@ -370,12 +386,30 @@
               <span>Domain name or IP address</span>
               <input id="target-input" type="text" placeholder="example.com or 203.0.113.10" required />
             </label>
+            <label id="service-level-field">
+              <span>Assessment depth</span>
+              <select id="service-level-input">
+                <option value="standard" selected>Standard assessment</option>
+                <option value="deep">Deep assessment</option>
+              </select>
+            </label>
             <label class="check-option target-authorization-check">
               <input id="target-authorization-input" type="checkbox" />
               <span>I confirm I own this target or have written authorization to perform this assessment.</span>
             </label>
-            <button id="scan-submit-button" type="submit">Run Vulnerability Assessment</button>
-            <div class="optional-report-actions">
+            <section id="scan-cost-card" class="scan-cost-card hidden" aria-live="polite">
+              <div>
+                <span id="scan-cost-service">Assessment estimate</span>
+                <strong><b id="scan-cost-value">0</b> credits</strong>
+              </div>
+              <p id="scan-cost-detail">Enter a target to calculate the required credits.</p>
+              <label class="check-option compact-check">
+                <input id="credit-charge-accepted-input" type="checkbox" />
+                <span id="credit-charge-label">I accept this scan charge.</span>
+              </label>
+            </section>
+            <button id="scan-submit-button" type="submit" disabled>Run Vulnerability Assessment</button>
+            <div id="optional-report-actions" class="optional-report-actions">
               <button id="report-intake-toggle-button" type="button" class="ghost">Submit Report</button>
               <p class="inline-copy">
                 Optional: complete this only when you want client and target owner details attached to the PDF report.
@@ -519,6 +553,17 @@
               </label>
             </div>
           </form>
+
+          <section class="coupon-panel">
+            <div>
+              <strong>Have a tester or promotional coupon?</strong>
+              <span>Redeem it to add promotional credits to your account.</span>
+            </div>
+            <form id="coupon-form" class="coupon-form">
+              <input id="coupon-code-input" type="text" autocomplete="off" placeholder="Coupon code" maxlength="80" required />
+              <button id="coupon-redeem-button" type="submit" class="ghost">Redeem</button>
+            </form>
+          </section>
 
           <section id="payment-panel" class="engagement-form">
             <div class="section-head">

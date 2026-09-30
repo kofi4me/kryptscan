@@ -715,17 +715,21 @@ def _tool_plan(target: str, payload: ScanRequest) -> list[tuple[str, list[str], 
                 ("OWASP ZAP baseline", ["zap-baseline.py", "-t", url, "-m", "5"], "Web and API"),
             ]
         )
-    if payload.assessment_mode == "ethical_pentesting":
-        checks.extend(
-            [
-                ("httpx", ["httpx", "-u", url, "-title", "-tech-detect", "-status-code", "-silent"], "Web/API Surface"),
-                ("Naabu", ["naabu", "-host", host, "-top-ports", "100", "-silent"], "Network Exposure"),
+    service_level = _context_text(payload, "service_level").lower() or "standard"
+    expanded_assessment = payload.assessment_mode == "ethical_pentesting" or service_level == "deep"
+    if expanded_assessment:
+        checks.append(("Naabu", ["naabu", "-host", host, "-top-ports", "1000", "-silent"], "Network Exposure"))
+        if payload.asset_type == "website":
+            checks.extend(
+                [
+                    ("httpx", ["httpx", "-u", url, "-title", "-tech-detect", "-status-code", "-silent"], "Web/API Surface"),
                 ("dnsx", ["dnsx", "-d", host, "-a", "-aaaa", "-cname", "-silent"], "DNS Exposure"),
                 ("Katana", ["katana", "-u", url, "-silent", "-d", "2"], "Crawling"),
                 ("Subfinder", ["subfinder", "-d", host, "-silent"], "Authorized Reconnaissance"),
                 ("Amass", ["amass", "enum", "-passive", "-d", host], "Authorized Reconnaissance"),
-            ]
-        )
+                ]
+            )
+    if payload.assessment_mode == "ethical_pentesting":
         if payload.asset_type == "website":
             checks.extend(
                 [
@@ -914,6 +918,7 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
     assessment_coverage = round((completed_stages / max(len(plan), 1)) * 100)
     coverage_status = "Complete" if assessment_coverage >= 90 else "Partial" if assessment_coverage >= 55 else "Limited"
     mode_label = "Ethical Pen-Testing" if payload.assessment_mode == "ethical_pentesting" else "Vulnerability Assessment"
+    service_level = _context_text(payload, "service_level").lower() or "standard"
     pen_test_protocols = []
     if payload.assessment_mode == "ethical_pentesting":
         pen_test_protocols = [
@@ -938,7 +943,7 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
                 "AI triage attempted for business danger and remediation explanation",
                 "Tool output normalized into KryptScan reporting schema",
             ],
-            "scope_summary": f"{mode_label} worker scan for {target}. Tier: {payload.scan_tier}.",
+            "scope_summary": f"{mode_label} worker scan for {target}. Service level: {service_level}. Tier: {payload.scan_tier}.",
             "assessment_coverage": assessment_coverage,
             "assessment_coverage_status": coverage_status,
         }

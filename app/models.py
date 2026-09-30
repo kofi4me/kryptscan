@@ -62,6 +62,9 @@ class ScanCreateRequest(BaseModel):
     asset_type: str | None = None
     assessment_mode: str = "vulnerability_assessment"
     scan_tier: str = "full_scan"
+    service_level: str = "standard"
+    quote_token: str | None = Field(default=None, max_length=160)
+    credit_charge_accepted: bool = False
     engagement_id: int | None = None
     target_authorization_accepted: bool = False
     report_company_name: str | None = Field(default=None, max_length=180)
@@ -85,6 +88,25 @@ class ScanCreateRequest(BaseModel):
     out_of_scope: str | None = Field(default=None, max_length=1000)
     critical_workflows: str | None = Field(default=None, max_length=1000)
     emergency_stop: str | None = Field(default=None, max_length=500)
+
+
+class ScanQuoteRequest(BaseModel):
+    target: str = Field(min_length=3, max_length=255)
+    assessment_mode: str = "vulnerability_assessment"
+    service_level: str = "standard"
+    pentest_depth: str = "standard"
+
+
+class CouponRedeemRequest(BaseModel):
+    code: str = Field(min_length=4, max_length=80)
+
+
+class CouponCreateRequest(BaseModel):
+    code: str = Field(min_length=4, max_length=80)
+    label: str = Field(min_length=2, max_length=120)
+    credit_amount: int = Field(ge=1, le=10000)
+    max_redemptions: int = Field(default=1, ge=1, le=100000)
+    expires_at: str | None = None
 
 
 class EngagementCreateRequest(BaseModel):

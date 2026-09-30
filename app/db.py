@@ -74,6 +74,87 @@ CREATE TABLE IF NOT EXISTS payments (
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS credit_wallets (
+    user_id INTEGER PRIMARY KEY,
+    organization_id INTEGER NOT NULL,
+    purchased_credits INTEGER NOT NULL DEFAULT 0,
+    promotional_credits INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (organization_id) REFERENCES organizations(id)
+);
+
+CREATE TABLE IF NOT EXISTS credit_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    organization_id INTEGER NOT NULL,
+    scan_id INTEGER,
+    transaction_type TEXT NOT NULL,
+    purchased_delta INTEGER NOT NULL DEFAULT 0,
+    promotional_delta INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL,
+    details_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (organization_id) REFERENCES organizations(id)
+);
+
+CREATE TABLE IF NOT EXISTS coupons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code_hash TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL,
+    credit_amount INTEGER NOT NULL,
+    max_redemptions INTEGER NOT NULL DEFAULT 1,
+    redemption_count INTEGER NOT NULL DEFAULT 0,
+    expires_at TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_by INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS coupon_redemptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    coupon_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    organization_id INTEGER NOT NULL,
+    credits_granted INTEGER NOT NULL,
+    redeemed_at TEXT NOT NULL,
+    UNIQUE (coupon_id, user_id),
+    FOREIGN KEY (coupon_id) REFERENCES coupons(id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (organization_id) REFERENCES organizations(id)
+);
+
+CREATE TABLE IF NOT EXISTS scan_quotes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    quote_token TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL,
+    organization_id INTEGER NOT NULL,
+    target_fingerprint TEXT NOT NULL,
+    assessment_mode TEXT NOT NULL,
+    service_level TEXT NOT NULL,
+    scan_tier TEXT NOT NULL,
+    credit_cost INTEGER NOT NULL,
+    balance_after INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    redeemed_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (organization_id) REFERENCES organizations(id)
+);
+
+CREATE TABLE IF NOT EXISTS free_trial_claims (
+    user_id INTEGER PRIMARY KEY,
+    organization_id INTEGER NOT NULL,
+    scan_id INTEGER,
+    status TEXT NOT NULL,
+    claimed_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (organization_id) REFERENCES organizations(id)
+);
+
 CREATE TABLE IF NOT EXISTS email_verifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL,
@@ -161,6 +242,9 @@ CREATE TABLE IF NOT EXISTS scans (
     report_json_path TEXT,
     report_email_sent_at TEXT,
     report_email_error TEXT,
+    credit_cost INTEGER NOT NULL DEFAULT 0,
+    credit_status TEXT NOT NULL DEFAULT 'none',
+    quote_id INTEGER,
     progress_percent INTEGER NOT NULL DEFAULT 0,
     progress_message TEXT,
     error_message TEXT,
@@ -201,6 +285,12 @@ def init_db() -> None:
         _ensure_scan_columns(connection)
         _ensure_table(connection, "entitlements")
         _ensure_table(connection, "payments")
+        _ensure_table(connection, "credit_wallets")
+        _ensure_table(connection, "credit_transactions")
+        _ensure_table(connection, "coupons")
+        _ensure_table(connection, "coupon_redemptions")
+        _ensure_table(connection, "scan_quotes")
+        _ensure_table(connection, "free_trial_claims")
         _ensure_table(connection, "password_resets")
         _ensure_table(connection, "engagements")
         _ensure_table(connection, "manual_findings")
@@ -269,6 +359,9 @@ def _ensure_scan_columns(connection: sqlite3.Connection) -> None:
         "report_json_path": "TEXT",
         "report_email_sent_at": "TEXT",
         "report_email_error": "TEXT",
+        "credit_cost": "INTEGER NOT NULL DEFAULT 0",
+        "credit_status": "TEXT NOT NULL DEFAULT 'none'",
+        "quote_id": "INTEGER",
         "progress_percent": "INTEGER NOT NULL DEFAULT 0",
         "progress_message": "TEXT",
     }
@@ -298,5 +391,8 @@ def get_connection():
     try:
         yield connection
         connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
     finally:
         connection.close()

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% if page == 'pricing' %}Pricing{% elif page == 'about' %}About{% elif page == 'support' %}Support{% else %}Policies{% endif %} | KryptScan</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body class="public-page-body">
+    <header class="masthead public-page-header">
+      <a class="brand-lockup" href="/" aria-label="KryptScan home"><img class="brand-logo" src="/static/images/kryptscan-logo.png" alt="KryptScan" /></a>
+      <nav class="public-nav always-visible" aria-label="Public navigation">
+        <a href="/">Home</a><a href="/pricing">Pricing</a><a href="/about">About</a><a href="/policies">Policies</a><a href="/support">Support</a>
+      </nav>
+      <div class="nav-actions"><a class="nav-button outline" href="/?auth=signin">Sign In</a><a class="nav-button solid" href="/?auth=signup">Create Account</a></div>
+    </header>
+
+    <main class="public-page-shell">
+      {% if page == 'pricing' %}
+      <section class="public-intro"><div class="eyebrow">Pricing</div><h1>Credits that match the work performed.</h1><p>Begin with one free basic vulnerability assessment. Paid plans provide reusable credits for professional assessments and downloadable reports.</p></section>
+      <section class="public-plan-grid">
+        {% for plan in plans %}
+        <article class="public-plan-card{% if plan.id == 'business' %} featured{% endif %}"><span>{{ plan.name }}</span><strong>${{ plan.price_usd_monthly }}<small>/month</small></strong><p>{{ plan.credits }} scan credits each month</p><p>{{ plan.audience }}</p><a href="/?auth=signup">Create Account</a></article>
+        {% endfor %}
+      </section>
+      <section class="public-content-band"><h2>Credit usage</h2><div class="public-rate-grid"><div><strong>Free Basic VA</strong><span>One per verified account</span></div><div><strong>Standard VA</strong><span>1 credit</span></div><div><strong>Deep VA</strong><span>3 credits</span></div><div><strong>Ethical Pen-Test</strong><span>8 credits</span></div><div><strong>Remediation Retest</strong><span>1 credit</span></div></div><p class="policy-note">Checkout is not yet active. Tester and promotional coupons can add credits during launch review.</p></section>
+      {% elif page == 'about' %}
+      <section class="public-intro"><div class="eyebrow">About KryptScan</div><h1>Practical security assessment for teams responsible for real systems.</h1><p>KryptScan is developed by KryptNet LLC for IT professionals, security teams, consultants, and MSPs that need repeatable vulnerability assessment and authorized ethical testing.</p></section>
+      <section class="public-content-band"><h2>Our purpose</h2><p>Technology environments change continuously. KryptScan helps authorized defenders identify exposed services, security weaknesses, and remediation priorities without replacing professional judgment.</p><h2>Responsible testing</h2><p>Every assessment requires confirmation of ownership or written authorization. Deceptive, destructive, disruptive, or unauthorized use is prohibited.</p><h2>Reports built for action</h2><p>Paid assessments provide human-readable PDF reporting and structured JSON for analytics, automation, and approved integrations.</p></section>
+      {% elif page == 'support' %}
+      <section class="public-intro"><div class="eyebrow">Support</div><h1>Help with accounts, assessments, and reports.</h1><p>Contact KryptNet LLC for account assistance, coupon support, authorized private-network assessment planning, or questions about a report.</p></section>
+      <section class="public-content-band"><h2>Before contacting support</h2><p>Include your registered email, scan ID, the approximate time of the issue, and a description of what happened. Never send passwords, tokens, private keys, or customer credentials.</p><h2>Security concerns</h2><p>Potential security issues affecting KryptScan should be reported privately under the <a href="/policies/vulnerability-disclosure">Vulnerability Disclosure Policy</a>.</p><a class="public-primary-link" href="mailto:support@kryptnet.org">support@kryptnet.org</a></section>
+      {% elif page == 'policies' %}
+      <section class="public-intro"><div class="eyebrow">Policies</div><h1>Clear rules for responsible security testing.</h1><p>Review these policies before creating an account, purchasing credits, or starting an assessment.</p></section>
+      <section class="policy-link-grid"><a href="/policies/terms"><strong>Terms of Service</strong><span>Account and service conditions</span></a><a href="/policies/privacy"><strong>Privacy Policy</strong><span>How account and assessment data is handled</span></a><a href="/policies/acceptable-use"><strong>Acceptable Use</strong><span>Authorization and prohibited activity</span></a><a href="/policies/credits-refunds"><strong>Credits and Refunds</strong><span>Charges, reservations, expiry, and failures</span></a><a href="/policies/vulnerability-disclosure"><strong>Vulnerability Disclosure</strong><span>How to report KryptScan security issues</span></a></section>
+      {% else %}
+      <section class="public-intro"><div class="eyebrow">Policy</div>
+        {% if policy == 'terms' %}<h1>Terms of Service</h1><p>Use of KryptScan is limited to lawful, authorized security assessment. Users are responsible for target authorization, scope accuracy, and compliance with applicable laws and contracts.</p>
+        {% elif policy == 'privacy' %}<h1>Privacy Policy</h1><p>KryptScan processes account, authorization, scan, report, and security-event data to provide and protect the service. Sensitive report access is restricted to the owning account and authorized administrators.</p>
+        {% elif policy == 'acceptable-use' %}<h1>Acceptable Use Policy</h1><p>Only test systems you own or have written permission to assess. Malware deployment, persistence, denial of service, credential theft, data exfiltration, evasion, and unauthorized access are prohibited.</p>
+        {% elif policy == 'credits-refunds' %}<h1>Credits and Refund Policy</h1><p>Credits are reserved when a scan starts and consumed when the assessment completes. Credits are automatically returned for qualifying KryptScan platform failures. Target unavailability or user-supplied scope errors may still consume credits after scanning resources have been used.</p>
+        {% else %}<h1>Vulnerability Disclosure Policy</h1><p>Report suspected KryptScan vulnerabilities privately to KryptNet LLC. Do not access customer data, disrupt service, publish unverified findings, or exceed the minimum testing needed to demonstrate an issue.</p>{% endif %}
+      </section>
+      <section class="public-content-band"><h2>Important notice</h2><p>These launch policies provide operational guidance and may be revised before commercial checkout is activated. Material changes will be published on this site.</p></section>
+      {% endif %}
+    </main>
+
+    <footer class="site-footer public-page-footer"><img src="/static/images/kryptscan-logo.png" alt="KryptScan" /><nav><a href="/pricing">Pricing</a><a href="/about">About</a><a href="/policies">Policies</a><a href="/support">Support</a></nav><p>Copyright 2026 KryptNet LLC. Responsible authorized security testing only.</p></footer>
+  </body>
+</html>

@@ -1814,6 +1814,337 @@ button.ghost {
   background: linear-gradient(135deg, #123a32 0%, #167a65 70%, #1f4fbf 100%);
 }
 
+.public-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-left: auto;
+  margin-right: 1.5rem;
+}
+
+.public-nav a,
+.site-footer a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.public-nav a {
+  color: #c8d5eb;
+  font-size: 0.88rem;
+}
+
+.public-nav a:hover,
+.site-footer a:hover {
+  color: #ffffff;
+}
+
+.workspace-account-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.credit-balance-badge {
+  min-width: 126px;
+  padding: 0.62rem 0.8rem;
+  border: 1px solid rgba(47, 99, 255, 0.24);
+  border-radius: 8px;
+  background: rgba(47, 99, 255, 0.08);
+}
+
+.credit-balance-badge span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.credit-balance-badge strong {
+  display: block;
+  margin-top: 0.1rem;
+  color: var(--ink);
+  font-size: 1.25rem;
+}
+
+.scan-cost-card {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+  border: 1px solid rgba(31, 79, 191, 0.24);
+  border-left: 5px solid #1f4fbf;
+  border-radius: 8px;
+  background: linear-gradient(100deg, rgba(31, 79, 191, 0.08), rgba(22, 122, 101, 0.06));
+}
+
+.scan-cost-card > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.scan-cost-card strong {
+  color: #10213d;
+}
+
+.scan-cost-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.coupon-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.coupon-panel > div span {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.coupon-form {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.coupon-form input {
+  min-width: 190px;
+}
+
+@media (max-width: 860px) {
+  .public-nav {
+    display: none;
+  }
+
+  .workspace-account-actions,
+  .coupon-panel,
+  .coupon-form {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+.nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.public-page-body {
+  min-height: 100vh;
+  background: #edf3f8;
+  color: #152238;
+}
+
+.public-page-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.public-page-shell {
+  width: min(1160px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 72px 0 80px;
+}
+
+.public-intro {
+  max-width: 780px;
+  margin-bottom: 40px;
+}
+
+.public-intro h1 {
+  max-width: 760px;
+  margin: 0.55rem 0 1rem;
+  color: #10213d;
+  font-family: "Sora", sans-serif;
+  font-size: clamp(2rem, 5vw, 4.3rem);
+  line-height: 1.03;
+  letter-spacing: 0;
+}
+
+.public-intro p {
+  color: #53647c;
+  font-size: 1.05rem;
+  line-height: 1.75;
+}
+
+.public-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.public-plan-card,
+.public-content-band,
+.policy-link-grid a {
+  border: 1px solid rgba(16, 33, 61, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 44px rgba(16, 33, 61, 0.08);
+}
+
+.public-plan-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 310px;
+  padding: 1.5rem;
+}
+
+.public-plan-card.featured {
+  border-top: 5px solid #1f4fbf;
+}
+
+.public-plan-card > span {
+  color: #1f4fbf;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.public-plan-card > strong {
+  margin: 1rem 0;
+  color: #10213d;
+  font-family: "Sora", sans-serif;
+  font-size: 2.4rem;
+}
+
+.public-plan-card > strong small {
+  color: #6c7b91;
+  font-family: "Manrope", sans-serif;
+  font-size: 0.85rem;
+}
+
+.public-plan-card p {
+  color: #53647c;
+}
+
+.public-plan-card a,
+.public-primary-link {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: auto;
+  padding: 0.8rem 1rem;
+  border-radius: 6px;
+  background: #1f4fbf;
+  color: #ffffff;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.public-content-band {
+  margin-top: 1rem;
+  padding: 1.7rem;
+}
+
+.public-content-band h2 {
+  margin-top: 1.6rem;
+  color: #10213d;
+}
+
+.public-content-band h2:first-child {
+  margin-top: 0;
+}
+
+.public-content-band p {
+  max-width: 880px;
+  color: #53647c;
+  line-height: 1.75;
+}
+
+.public-rate-grid,
+.policy-link-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.public-rate-grid div {
+  padding: 1rem;
+  border-left: 4px solid #d94b37;
+  background: #f4f7fb;
+}
+
+.public-rate-grid span,
+.policy-link-grid span {
+  display: block;
+  margin-top: 0.3rem;
+  color: #64758c;
+}
+
+.policy-link-grid a {
+  padding: 1.25rem;
+  color: #10213d;
+  text-decoration: none;
+}
+
+.policy-note {
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #1f4fbf;
+  background: rgba(31, 79, 191, 0.06);
+}
+
+.public-page-footer {
+  margin-top: 0;
+  border-radius: 0;
+}
+
+.admin-coupon-form {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 0.6fr 0.7fr 1fr auto;
+  gap: 0.65rem;
+}
+
+.admin-coupon-list {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
+.admin-coupon-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(142, 169, 216, 0.18);
+  border-radius: 6px;
+}
+
+.admin-coupon-list span {
+  color: #9fb0c9;
+}
+
+@media (max-width: 860px) {
+  .public-nav.always-visible {
+    display: none;
+  }
+
+  .public-plan-grid,
+  .public-rate-grid,
+  .policy-link-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-coupon-form {
+    grid-template-columns: 1fr;
+  }
+
+  .public-page-shell {
+    padding-top: 42px;
+  }
+}
+
 #scan-submit-button {
   color: #ffffff;
   background: linear-gradient(135deg, #10213d 0%, #1f4fbf 70%, #b23a32 100%);

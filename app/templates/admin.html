@@ -43,6 +43,20 @@
 
       <section class="admin-panels">
         <article class="admin-card">
+          <div class="admin-card-head"><h2>Promotional Coupons</h2><span>Codes are shown only when created</span></div>
+          <form id="admin-coupon-form" class="admin-coupon-form">
+            <input id="admin-coupon-code" type="text" placeholder="Coupon code" minlength="4" maxlength="80" required>
+            <input id="admin-coupon-label" type="text" placeholder="Campaign label" required>
+            <input id="admin-coupon-credits" type="number" min="1" max="10000" value="3" aria-label="Credits" required>
+            <input id="admin-coupon-limit" type="number" min="1" max="100000" value="25" aria-label="Maximum redemptions" required>
+            <input id="admin-coupon-expiry" type="datetime-local" aria-label="Expiry">
+            <button id="admin-coupon-button" type="submit">Create Coupon</button>
+          </form>
+          <p id="admin-coupon-result" class="admin-status" aria-live="polite"></p>
+          <div id="admin-coupon-list" class="admin-coupon-list"></div>
+        </article>
+
+        <article class="admin-card">
           <div class="admin-card-head">
             <h2>Users</h2>
             <span>Newest first</span>
