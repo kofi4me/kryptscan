@@ -270,6 +270,7 @@ class ScanSummary(BaseModel):
     risk_score: int | None = None
     severity_counts: SeverityCounts | None = None
     report_pdf_available: bool = False
+    report_json_available: bool = False
     report_email_sent_at: str | None = None
     report_email_error: str | None = None
     progress_percent: int = 0

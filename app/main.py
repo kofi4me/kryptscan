@@ -66,6 +66,7 @@ from app.services.ownership import (
     normalize_assessment_mode,
 )
 from app.services.pdf_report import write_pdf_report
+from app.services.json_report import write_json_report
 from app.services.reporting import build_assessment_report
 from app.services.scanners import get_scanner_provider, greenbone_is_available, resolve_backend_name
 from app.services.toolchain import get_assessment_profiles, get_ethical_pentest_toolchain
@@ -604,6 +605,7 @@ def _summary_from_row(scan: Row) -> ScanSummary:
         risk_score=risk_score,
         severity_counts=counts,
         report_pdf_available=bool(scan["report_pdf_path"]),
+        report_json_available=bool(scan["report_json_path"] or scan["report_json"]),
         report_email_sent_at=scan["report_email_sent_at"],
         report_email_error=scan["report_email_error"],
         progress_percent=int(scan["progress_percent"] or 0),
@@ -636,17 +638,22 @@ def _load_scan(connection, scan_id: int, organization_id: int, requested_by: int
     ).fetchone()
 
 
-def _slugify(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", value.strip().lower())
-    return slug.strip("-") or "target"
-
-
-def _report_path_for_scan(scan_id: int, target: str):
-    filename = f"scan-{scan_id}-{_slugify(target)}.pdf"
+def _report_path_for_scan(
+    scan_id: int,
+    assessment_mode: str,
+    created_at: str | None,
+    suffix: str,
+):
+    try:
+        report_year = utcnow().year if not created_at else int(created_at[:4])
+    except (TypeError, ValueError):
+        report_year = utcnow().year
+    mode = "PT" if normalize_assessment_mode(assessment_mode) == "ethical_pentesting" else "VA"
+    filename = f"KryptScan_{mode}_KS-{report_year}-{scan_id:06d}.{suffix}"
     return settings.reports_dir / filename
 
 
-def _safe_report_file_path(path_value: str) -> str:
+def _safe_report_file_path(path_value: str, expected_suffix: str) -> str:
     reports_root = settings.reports_dir.resolve()
     candidate = Path(path_value).resolve()
     if candidate != reports_root and reports_root not in candidate.parents:
@@ -654,10 +661,10 @@ def _safe_report_file_path(path_value: str) -> str:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Report file path is outside the allowed reports directory.",
         )
-    if candidate.suffix.lower() != ".pdf":
+    if candidate.suffix.lower() != expected_suffix.lower():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only PDF report downloads are allowed.",
+            detail="The requested report format is not allowed.",
         )
     return str(candidate)
 
@@ -667,7 +674,7 @@ def _purge_user_scan_history(user: Row) -> None:
     with get_connection() as connection:
         rows = connection.execute(
             """
-            SELECT id, report_pdf_path
+            SELECT id, report_pdf_path, report_json_path
             FROM scans
             WHERE organization_id = ?
               AND requested_by = ?
@@ -676,7 +683,12 @@ def _purge_user_scan_history(user: Row) -> None:
             (user["organization_id"], user["id"]),
         ).fetchall()
         scan_ids = [int(row["id"]) for row in rows]
-        report_paths = [row["report_pdf_path"] for row in rows if row["report_pdf_path"]]
+        report_paths = [
+            path
+            for row in rows
+            for path in (row["report_pdf_path"], row["report_json_path"])
+            if path
+        ]
         if scan_ids:
             placeholders = ",".join("?" for _ in scan_ids)
             connection.execute(
@@ -708,7 +720,9 @@ def _purge_user_scan_history(user: Row) -> None:
 
     for path_value in report_paths:
         try:
-            Path(_safe_report_file_path(path_value)).unlink(missing_ok=True)
+            suffix = Path(path_value).suffix.lower()
+            if suffix in {".pdf", ".json"}:
+                Path(_safe_report_file_path(path_value, suffix)).unlink(missing_ok=True)
         except (OSError, HTTPException):
             continue
 
@@ -888,13 +902,26 @@ def _enrich_report_for_scan(
 def _deliver_completed_report(
     scan_id: int,
     user: Row,
-    scan: Row,
+    scan: Row | dict,
     report: AssessmentReport,
     *,
     notify_user: bool,
-) -> tuple[str, str | None, str | None]:
-    pdf_path = _report_path_for_scan(scan_id, scan["normalized_target"])
+) -> tuple[str, str | None, str | None, str | None]:
     mode = normalize_assessment_mode(scan["assessment_mode"])
+    pdf_path = _report_path_for_scan(scan_id, mode, scan["created_at"], "pdf")
+    json_path = _report_path_for_scan(scan_id, mode, scan["created_at"], "json")
+    try:
+        report_year = int(scan["created_at"][:4])
+    except (TypeError, ValueError):
+        report_year = utcnow().year
+    public_scan_id = f"KS-{report_year}-{scan_id:06d}"
+    scan_metadata = {
+        "scan_id": public_scan_id,
+        "report_id": f"KSR-{report_year}-{scan_id:06d}",
+        "status": scan["status"],
+        "started_at": scan["started_at"],
+        "completed_at": scan["completed_at"],
+    }
     engagement = None
     with get_connection() as connection:
         if scan["engagement_id"]:
@@ -902,7 +929,6 @@ def _deliver_completed_report(
                 "SELECT * FROM engagements WHERE id = ? AND organization_id = ?",
                 (scan["engagement_id"], user["organization_id"]),
             ).fetchone()
-    report = _enrich_report_for_scan(scan_id, user, scan, report)
     pdf_bytes = write_pdf_report(
         output_path=pdf_path,
         target=scan["normalized_target"],
@@ -913,7 +939,14 @@ def _deliver_completed_report(
         report=report,
         msp_details=_report_msp_details(user),
         owner_details=_report_owner_details(scan, engagement),
+        scan_metadata=scan_metadata,
     )
+    json_report_path = None
+    try:
+        write_json_report(json_path, dict(scan), report)
+        json_report_path = str(json_path)
+    except Exception:
+        logger.exception("JSON report generation failed scan_id=%s", scan_id)
 
     emailed_at = None
     email_error = None
@@ -930,7 +963,7 @@ def _deliver_completed_report(
         except Exception as exc:  # pragma: no cover - delivery depends on environment
             email_error = str(exc)
 
-    return str(pdf_path), emailed_at, email_error
+    return str(pdf_path), json_report_path, emailed_at, email_error
 
 
 def _merge_manual_findings(report: AssessmentReport, target: str, rows: list[Row]) -> AssessmentReport:
@@ -1001,18 +1034,31 @@ def _store_completed_scan(
             scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
 
         delivered_path = None
+        delivered_json_path = None
         emailed_at = None
         email_error = None
-        if create_pdf:
-            delivered_path, emailed_at, email_error = _deliver_completed_report(
-                scan_id=scan_id,
-                user=user,
-                scan=scan,
-                report=report,
-                notify_user=notify_user,
-            )
         persisted_report = _enrich_report_for_scan(scan_id, user, scan, report)
         completed_at = utcnow().isoformat()
+        if create_pdf:
+            completed_scan = dict(scan)
+            completed_scan.update({"status": "completed", "completed_at": completed_at})
+            delivered_path, delivered_json_path, emailed_at, email_error = _deliver_completed_report(
+                scan_id=scan_id,
+                user=user,
+                scan=completed_scan,
+                report=persisted_report,
+                notify_user=notify_user,
+            )
+        else:
+            completed_scan = dict(scan)
+            completed_scan.update({"status": "completed", "completed_at": completed_at})
+            mode = normalize_assessment_mode(scan["assessment_mode"])
+            json_path = _report_path_for_scan(scan_id, mode, scan["created_at"], "json")
+            try:
+                write_json_report(json_path, completed_scan, persisted_report)
+                delivered_json_path = str(json_path)
+            except Exception:
+                logger.exception("JSON report generation failed scan_id=%s", scan_id)
         connection.execute(
             """
             UPDATE scans
@@ -1020,6 +1066,7 @@ def _store_completed_scan(
                 report_json = ?,
                 metrics_json = ?,
                 report_pdf_path = COALESCE(?, report_pdf_path),
+                report_json_path = COALESCE(?, report_json_path),
                 report_email_sent_at = COALESCE(?, report_email_sent_at),
                 report_email_error = ?,
                 progress_percent = 100,
@@ -1032,6 +1079,7 @@ def _store_completed_scan(
                 persisted_report.model_dump_json(),
                 json.dumps({"risk_score": persisted_report.risk_score}),
                 delivered_path,
+                delivered_json_path,
                 emailed_at,
                 email_error,
                 completed_at,
@@ -2337,6 +2385,7 @@ def client_portal(user: Row = Depends(get_current_user)) -> ClientPortalResponse
                 "risk_band": report.risk_band,
                 "completed_at": scan["completed_at"],
                 "pdf_available": bool(scan["report_pdf_path"]),
+                "json_available": bool(scan["report_json_path"] or scan["report_json"]),
             }
         )
         for item in report.remediation_plan[:5]:
@@ -3018,10 +3067,51 @@ def download_report_pdf(scan_id: int, user: Row = Depends(get_current_user)) -> 
         _audit(connection, user, "report.pdf_downloaded", {"scan_id": scan_id})
 
     return FileResponse(
-        path=_safe_report_file_path(scan["report_pdf_path"]),
+        path=_safe_report_file_path(scan["report_pdf_path"], ".pdf"),
         media_type="application/pdf",
-        filename=_report_path_for_scan(scan_id, scan["normalized_target"]).name,
+        filename=Path(scan["report_pdf_path"]).name,
         headers={"Cache-Control": "private, no-store, max-age=0"},
+    )
+
+
+@app.get("/api/reports/{scan_id}/json")
+def download_report_json(scan_id: int, user: Row = Depends(get_current_user)) -> FileResponse:
+    with get_connection() as connection:
+        scan = _load_scan(connection, scan_id, user["organization_id"], int(user["id"]))
+        if scan is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
+        report = _get_report_for_scan(scan)
+        if report is None or scan["status"] != "completed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="JSON report is not ready yet.",
+            )
+
+        json_path_value = scan["report_json_path"]
+        if not json_path_value or not Path(json_path_value).is_file():
+            mode = normalize_assessment_mode(scan["assessment_mode"])
+            json_path = _report_path_for_scan(scan_id, mode, scan["created_at"], "json")
+            try:
+                write_json_report(json_path, dict(scan), report)
+            except Exception as exc:
+                logger.exception("JSON report generation failed during download scan_id=%s", scan_id)
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="The JSON report could not be validated. An administrator has been notified.",
+                ) from exc
+            json_path_value = str(json_path)
+            connection.execute(
+                "UPDATE scans SET report_json_path = ? WHERE id = ? AND organization_id = ? AND requested_by = ?",
+                (json_path_value, scan_id, user["organization_id"], user["id"]),
+            )
+
+        _audit(connection, user, "report.json_downloaded", {"scan_id": scan_id})
+
+    return FileResponse(
+        path=_safe_report_file_path(json_path_value, ".json"),
+        media_type="application/json",
+        filename=Path(json_path_value).name,
+        headers={"Cache-Control": "private, no-store, max-age=0", "X-Content-Type-Options": "nosniff"},
     )
 
 

@@ -138,6 +138,7 @@ def _safe(value: str | None, fallback: str = "Not provided") -> str:
 
 def _redact_sensitive(value: str | None) -> str:
     text = _safe(value, "")
+    text = re.sub(r"(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)\S+", r"\1[REDACTED]", text)
     text = re.sub(r"(?i)(password|passwd|secret|token|api[_-]?key|authorization)\s*[:=]\s*\S+", r"\1=[REDACTED]", text)
     text = re.sub(r"(?i)(bearer|basic)\s+[a-z0-9._~+/=-]+", r"\1 [REDACTED]", text)
     text = re.sub(r"(?i)(session|cookie)[=:]\s*[^;\s]+", r"\1=[REDACTED]", text)
@@ -242,6 +243,7 @@ def _write_cover_page(
     report: AssessmentReport,
     msp_details: dict[str, str] | None,
     owner_details: dict[str, str] | None,
+    scan_metadata: dict[str, str | None] | None = None,
 ) -> None:
     client = _safe((owner_details or {}).get("Company name") or (msp_details or {}).get("Company name"), "Authorized Organization")
     canvas.text("KryptScan", size=24, bold=True, color=(0.07, 0.25, 0.65))
@@ -259,7 +261,11 @@ def _write_cover_page(
         ("Report Generated", report.generated_at),
         ("Prepared By", _safe((msp_details or {}).get("Company name"), "KryptNet LLC / Authorized MSP")),
         ("Report Recipient", recipient_email),
-        ("Report ID", f"KS-PT-{target.upper().replace('.', '-')[:24]}"),
+        ("Scan ID", _safe((scan_metadata or {}).get("scan_id"))),
+        ("Report ID", _safe((scan_metadata or {}).get("report_id"))),
+        ("Scan Status", _safe((scan_metadata or {}).get("status"))),
+        ("Scan Started", _safe((scan_metadata or {}).get("started_at"))),
+        ("Scan Completed", _safe((scan_metadata or {}).get("completed_at"))),
     ]:
         canvas.text(f"{label}: {value}", size=12)
     canvas.spacer(20)
@@ -328,7 +334,7 @@ def _write_pentest_finding(canvas: _Canvas, finding: Finding, finding_code: str)
     ]:
         canvas.text(f"{label}: {value}", size=9, indent=8)
     canvas.text("Description", size=10, bold=True, indent=8)
-    canvas.text(finding.description, size=9, indent=16)
+    canvas.text(_redact_sensitive(finding.description), size=9, indent=16)
     canvas.text("Technical Evidence", size=10, bold=True, indent=8)
     canvas.text(_redact_sensitive(finding.evidence or finding.description), size=9, indent=16, color=(0.30, 0.37, 0.44))
     canvas.text("Validation Performed", size=10, bold=True, indent=8)
@@ -340,7 +346,7 @@ def _write_pentest_finding(canvas: _Canvas, finding: Finding, finding_code: str)
     canvas.text("Business Impact", size=10, bold=True, indent=8)
     canvas.text(_business_impact(finding), size=9, indent=16)
     canvas.text("Remediation", size=10, bold=True, indent=8)
-    canvas.text(finding.remediation, size=9, indent=16)
+    canvas.text(_redact_sensitive(finding.remediation), size=9, indent=16)
     canvas.text(f"Remediation Priority: {_remediation_window(finding)}", size=9, bold=True, indent=8)
     canvas.text("Verification", size=10, bold=True, indent=8)
     canvas.text(_verification_guidance(finding), size=9, indent=16)
@@ -356,6 +362,7 @@ def _build_pentest_pdf_bytes(
     report: AssessmentReport,
     msp_details: dict[str, str] | None = None,
     owner_details: dict[str, str] | None = None,
+    scan_metadata: dict[str, str | None] | None = None,
 ) -> bytes:
     canvas = _Canvas()
     _write_cover_page(
@@ -367,6 +374,7 @@ def _build_pentest_pdf_bytes(
         report=report,
         msp_details=msp_details,
         owner_details=owner_details,
+        scan_metadata=scan_metadata,
     )
     _write_confidentiality_notice(canvas)
     _write_executive_dashboard(canvas, report)
@@ -497,8 +505,8 @@ def _build_pentest_pdf_bytes(
         for index, finding in enumerate(exposures, start=1):
             canvas.text(f"{index}. {finding.title} [{finding.finding_type} | {finding.validation_status}]", size=10, bold=True)
             canvas.text(f"Asset: {finding.host}  Port: {finding.port or 'n/a'}  Service: {finding.service or 'n/a'}", size=9, indent=8)
-            canvas.text(f"Why it matters: {finding.description}", size=9, indent=8)
-            canvas.text(f"Recommendation: {finding.remediation}", size=9, indent=8)
+            canvas.text(f"Why it matters: {_redact_sensitive(finding.description)}", size=9, indent=8)
+            canvas.text(f"Recommendation: {_redact_sensitive(finding.remediation)}", size=9, indent=8)
     else:
         canvas.text("No exposure or informational observations were recorded.", size=10, indent=8)
     canvas.divider()
@@ -545,6 +553,7 @@ def _build_pdf_bytes(
     report: AssessmentReport,
     msp_details: dict[str, str] | None = None,
     owner_details: dict[str, str] | None = None,
+    scan_metadata: dict[str, str | None] | None = None,
 ) -> bytes:
     if _is_pentest_mode(assessment_mode):
         return _build_pentest_pdf_bytes(
@@ -556,6 +565,7 @@ def _build_pdf_bytes(
             report=report,
             msp_details=msp_details,
             owner_details=owner_details,
+            scan_metadata=scan_metadata,
         )
 
     canvas = _Canvas()
@@ -567,6 +577,11 @@ def _build_pdf_bytes(
     canvas.text(f"Assessment mode: {assessment_mode.replace('_', ' ').title()}")
     canvas.text(f"Scanner backend: {scanner_backend}")
     canvas.text(f"Report recipient: {recipient_email}")
+    canvas.text(f"Scan ID: {_safe((scan_metadata or {}).get('scan_id'))}")
+    canvas.text(f"Report ID: {_safe((scan_metadata or {}).get('report_id'))}")
+    canvas.text(f"Scan status: {_safe((scan_metadata or {}).get('status'))}")
+    canvas.text(f"Scan started: {_safe((scan_metadata or {}).get('started_at'))}")
+    canvas.text(f"Scan completed: {_safe((scan_metadata or {}).get('completed_at'))}")
     canvas.text(f"Generated at: {report.generated_at}")
     canvas.divider()
 
@@ -730,10 +745,10 @@ def _build_pdf_bytes(
             canvas.text(f"CVSS vector: {finding.cvss_vector}", size=10, indent=8, color=(0.35, 0.40, 0.45))
         if finding.detected_by:
             canvas.text(f"Detected by: {', '.join(finding.detected_by)}", size=10, indent=8, color=(0.35, 0.40, 0.45))
-        canvas.text(f"Description: {finding.description}", size=10, indent=8)
-        canvas.text(f"Remediation: {finding.remediation}", size=10, indent=8)
+        canvas.text(f"Description: {_redact_sensitive(finding.description)}", size=10, indent=8)
+        canvas.text(f"Remediation: {_redact_sensitive(finding.remediation)}", size=10, indent=8)
         if finding.evidence:
-            canvas.text(f"Evidence: {finding.evidence}", size=10, indent=8, color=(0.30, 0.37, 0.44))
+            canvas.text(f"Evidence: {_redact_sensitive(finding.evidence)}", size=10, indent=8, color=(0.30, 0.37, 0.44))
         canvas.spacer(5)
     canvas.divider()
 
@@ -752,10 +767,10 @@ def _build_pdf_bytes(
             indent=8,
             color=(0.35, 0.40, 0.45),
         )
-        canvas.text(f"Description: {finding.description}", size=10, indent=8)
-        canvas.text(f"Recommended review: {finding.remediation}", size=10, indent=8)
+        canvas.text(f"Description: {_redact_sensitive(finding.description)}", size=10, indent=8)
+        canvas.text(f"Recommended review: {_redact_sensitive(finding.remediation)}", size=10, indent=8)
         if finding.evidence:
-            canvas.text(f"Evidence: {finding.evidence}", size=9, indent=8, color=(0.30, 0.37, 0.44))
+            canvas.text(f"Evidence: {_redact_sensitive(finding.evidence)}", size=9, indent=8, color=(0.30, 0.37, 0.44))
         canvas.spacer(5)
 
     return _serialize_pdf(canvas.pages)
@@ -824,6 +839,7 @@ def write_pdf_report(
     assessment_mode: str = "vulnerability_assessment",
     msp_details: dict[str, str] | None = None,
     owner_details: dict[str, str] | None = None,
+    scan_metadata: dict[str, str | None] | None = None,
 ) -> bytes:
     pdf_bytes = _build_pdf_bytes(
         target=target,
@@ -834,6 +850,7 @@ def write_pdf_report(
         report=report,
         msp_details=msp_details,
         owner_details=owner_details,
+        scan_metadata=scan_metadata,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(pdf_bytes)

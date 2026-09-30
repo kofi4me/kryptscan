@@ -1796,11 +1796,22 @@ button.ghost {
   gap: 0.65rem;
 }
 
-.report-actions #report-download-button {
+.report-format-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-actions #report-download-button,
+.report-actions #report-json-download-button {
   color: #ffffff;
   background: linear-gradient(135deg, #10213d 0%, #1f4fbf 68%, #d94b37 100%);
   border: 1px solid rgba(255, 255, 255, 0.18);
   box-shadow: 0 14px 30px rgba(16, 33, 61, 0.22);
+}
+
+.report-actions #report-json-download-button {
+  background: linear-gradient(135deg, #123a32 0%, #167a65 70%, #1f4fbf 100%);
 }
 
 #scan-submit-button {

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kryptscan.kryptnet.org/schemas/kryptscan-report-schema-v1.json",
+  "title": "KryptScan Security Assessment Report",
+  "type": "object",
+  "required": ["schema_version", "generator", "scan_id", "report_id", "report_type", "scan", "target", "executive_summary", "assets", "services", "findings", "statistics", "assessment_summary", "metadata"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "generator": {
+      "type": "object",
+      "required": ["product", "report_format"],
+      "properties": {"product": {"const": "KryptScan"}, "report_format": {"const": "JSON"}},
+      "additionalProperties": false
+    },
+    "scan_id": {"type": "string", "pattern": "^KS-[0-9]{4}-[0-9]{6}$"},
+    "report_id": {"type": "string", "pattern": "^KSR-[0-9]{4}-[0-9]{6}$"},
+    "report_type": {"enum": ["vulnerability_assessment", "penetration_test"]},
+    "scan": {
+      "type": "object",
+      "required": ["scan_id", "scan_type", "status", "started_at", "completed_at", "duration_seconds"],
+      "properties": {
+        "scan_id": {"type": "string"}, "scan_type": {"type": "string"}, "status": {"type": "string"},
+        "started_at": {"type": ["string", "null"]}, "completed_at": {"type": ["string", "null"]},
+        "duration_seconds": {"type": ["integer", "null"], "minimum": 0}, "profile": {"type": ["string", "null"]},
+        "scope": {"type": "string"}, "methodology": {"type": "array", "items": {"type": "string"}},
+        "authenticated": {"type": ["boolean", "null"]}, "configuration_profile": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "target": {"type": "object", "required": ["input", "target_type", "asset_type", "resolved_ips"], "additionalProperties": true},
+    "executive_summary": {"type": "object", "required": ["overall_risk", "total_findings", "critical", "high", "medium", "low", "informational"], "additionalProperties": true},
+    "assets": {"type": "array", "items": {"type": "object", "required": ["asset_id"], "additionalProperties": true}},
+    "services": {"type": "array", "items": {"type": "object", "required": ["asset_id", "port", "protocol", "service"], "additionalProperties": true}},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["finding_id", "title", "category", "description", "affected_asset", "severity", "cvss", "identifiers", "evidence", "risk", "impact", "remediation", "references", "provenance"],
+        "properties": {
+          "finding_id": {"type": "string"}, "title": {"type": "string"}, "category": {"type": "string"}, "description": {"type": "string"},
+          "affected_asset": {"type": "object"}, "severity": {"enum": ["critical", "high", "medium", "low", "informational"]},
+          "cvss": {"type": "object"}, "identifiers": {"type": "object"}, "evidence": {"type": "object"}, "risk": {"type": "object"},
+          "impact": {"type": "string"}, "remediation": {"type": "object"}, "references": {"type": "array"}, "confidence": {"type": "object"},
+          "validation_status": {"type": "string"}, "finding_type": {"type": "string"}, "provenance": {"type": "object"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "statistics": {"type": "object", "required": ["assets_scanned", "services_discovered", "total_findings", "findings_by_severity"], "additionalProperties": true},
+    "assessment_summary": {"type": "object", "required": ["overall_risk_rating", "highest_priority_findings", "recommended_next_step"], "additionalProperties": true},
+    "penetration_test": {"type": ["object", "null"]},
+    "metadata": {"type": "object", "required": ["generated_at", "classification"], "additionalProperties": true}
+  },
+  "additionalProperties": false
+}

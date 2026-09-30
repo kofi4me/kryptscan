@@ -48,6 +48,9 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("report-download-button").addEventListener("click", () => {
     if (state.activeScanId) downloadReport(state.activeScanId);
   });
+  document.getElementById("report-json-download-button").addEventListener("click", () => {
+    if (state.activeScanId) downloadJsonReport(state.activeScanId);
+  });
   document.getElementById("report-email-button").addEventListener("click", () => {
     if (state.activeScanId) emailReport(state.activeScanId);
   });
@@ -1100,7 +1103,10 @@ function renderClientPortal(payload) {
                     <span>Score ${report.risk_score}</span>
                   </div>
                 </div>
-                ${report.pdf_available ? `<button type="button" onclick="downloadReport(${report.scan_id})">PDF</button>` : ""}
+                <div class="report-format-actions">
+                  ${report.pdf_available ? `<button type="button" onclick="downloadReport(${report.scan_id})">PDF</button>` : ""}
+                  ${report.json_available ? `<button type="button" onclick="downloadJsonReport(${report.scan_id})">JSON</button>` : ""}
+                </div>
               </header>
             </article>
           `
@@ -1175,6 +1181,9 @@ function renderReport(report) {
   document
     .getElementById("report-email-button")
     .classList.toggle("hidden", !activeScan?.report_pdf_available);
+  document
+    .getElementById("report-json-download-button")
+    .classList.toggle("hidden", !activeScan?.report_json_available);
   renderReportCockpit(report, activeScan);
 
   renderSeverityCockpit("severity-chart", [
@@ -1531,11 +1540,22 @@ function filenameFromDisposition(headerValue, fallback) {
 }
 
 async function downloadReport(scanId) {
-  const button = document.getElementById("report-download-button");
-  setButtonBusy("report-download-button", true, "Downloading...");
-  setDownloadStatus(true, 12, "Requesting the PDF report.");
+  return downloadReportFile(scanId, "pdf");
+}
+
+async function downloadJsonReport(scanId) {
+  return downloadReportFile(scanId, "json");
+}
+
+async function downloadReportFile(scanId, format) {
+  const isJson = format === "json";
+  const label = isJson ? "JSON" : "PDF";
+  const buttonId = isJson ? "report-json-download-button" : "report-download-button";
+  const button = document.getElementById(buttonId);
+  setButtonBusy(buttonId, true, "Downloading...");
+  setDownloadStatus(true, 12, `Requesting the ${label} report.`);
   try {
-    const response = await fetch(`/api/reports/${scanId}/pdf`, { headers: csrfHeaders() });
+    const response = await fetch(`/api/reports/${scanId}/${format}`, { headers: csrfHeaders() });
     if (!response.ok) {
       let payload = {};
       try {
@@ -1543,29 +1563,29 @@ async function downloadReport(scanId) {
       } catch (_error) {
         payload = {};
       }
-      setStatus("dashboard-status", formatApiError(payload, "Unable to download PDF report."), "error");
+      setStatus("dashboard-status", formatApiError(payload, `Unable to download ${label} report.`), "error");
       setDownloadStatus(true, 100, "Download could not be completed.");
       return;
     }
-    setDownloadStatus(true, 58, "PDF report received. Preparing your file.");
+    setDownloadStatus(true, 58, `${label} report received. Preparing your file.`);
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = filenameFromDisposition(response.headers.get("content-disposition"), `kryptscan-report-${scanId}.pdf`);
+    link.download = filenameFromDisposition(response.headers.get("content-disposition"), `kryptscan-report-${scanId}.${format}`);
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    setDownloadStatus(true, 100, "PDF download completed.");
-    setStatus("dashboard-status", "PDF report download completed.", "success");
-    window.alert("PDF report download completed.");
+    setDownloadStatus(true, 100, `${label} download completed.`);
+    setStatus("dashboard-status", `${label} report download completed.`, "success");
+    window.alert(`${label} report download completed.`);
     window.setTimeout(() => setDownloadStatus(false), 3500);
   } catch (error) {
-    setStatus("dashboard-status", `PDF download failed: ${error.message || error}`, "error");
+    setStatus("dashboard-status", `${label} download failed: ${error.message || error}`, "error");
     setDownloadStatus(true, 100, "Download failed. Please try again.");
   } finally {
-    if (button) setButtonBusy("report-download-button", false);
+    if (button) setButtonBusy(buttonId, false);
   }
 }
 
@@ -1601,4 +1621,5 @@ function escapeHtml(value) {
 window.refreshScan = refreshScan;
 window.loadReport = loadReport;
 window.downloadReport = downloadReport;
+window.downloadJsonReport = downloadJsonReport;
 window.emailReport = emailReport;
