@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import ipaddress
+import hashlib
+import hmac
 import re
 import secrets
 import shutil
@@ -192,6 +194,14 @@ def _client_ip(request: Request) -> str:
     if forwarded_for and client_host in settings.trusted_proxy_ips:
         return forwarded_for.split(",", 1)[0].strip()
     return client_host
+
+
+def _free_trial_fingerprint(request: Request) -> str:
+    return hmac.new(
+        settings.app_secret.encode("utf-8"),
+        f"kryptscan-free-trial:{_client_ip(request)}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def _rate_limit(request: Request, bucket: str, *, limit: int, window_seconds: int) -> None:
@@ -1466,6 +1476,7 @@ def quote_scan(
             target=target,
             assessment_mode=assessment_mode,
             service_level=service_level,
+            request_fingerprint=_free_trial_fingerprint(request),
         )
         _audit(
             connection,

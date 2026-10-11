@@ -80,36 +80,70 @@ def wallet_snapshot(connection: Connection, user: Row) -> dict[str, int]:
     return {"purchased": purchased, "promotional": promotional, "total": purchased + promotional}
 
 
-def free_trial_available(connection: Connection, user: Row, *, exclude_scan_id: int | None = None) -> bool:
+def free_trial_available(
+    connection: Connection,
+    user: Row,
+    *,
+    exclude_scan_id: int | None = None,
+    request_fingerprint: str | None = None,
+) -> bool:
     claim = connection.execute(
-        "SELECT status FROM free_trial_claims WHERE user_id = ? AND organization_id = ?",
-        (user["id"], user["organization_id"]),
+        """
+        SELECT status, scan_id FROM free_trial_claims
+        WHERE organization_id = ?
+        ORDER BY updated_at DESC LIMIT 1
+        """,
+        (user["organization_id"],),
     ).fetchone()
-    if claim is not None:
-        return claim["status"] == "refunded"
-    if exclude_scan_id is None:
+    if claim is not None and claim["status"] != "refunded":
+        return False
+    if request_fingerprint:
+        network_claims = connection.execute(
+            """
+            SELECT COUNT(*) AS count FROM free_trial_claims
+            WHERE request_fingerprint = ? AND organization_id != ? AND status != 'refunded'
+            """,
+            (request_fingerprint, user["organization_id"]),
+        ).fetchone()
+        if int(network_claims["count"] or 0) >= 2:
+            return False
+    excluded_ids = [value for value in (exclude_scan_id, claim["scan_id"] if claim else None) if value is not None]
+    if len(excluded_ids) == 2:
         prior_scan = connection.execute(
-            "SELECT 1 FROM scans WHERE organization_id = ? AND requested_by = ? LIMIT 1",
-            (user["organization_id"], user["id"]),
+            "SELECT 1 FROM scans WHERE organization_id = ? AND id NOT IN (?, ?) LIMIT 1",
+            (user["organization_id"], excluded_ids[0], excluded_ids[1]),
+        ).fetchone()
+    elif len(excluded_ids) == 1:
+        prior_scan = connection.execute(
+            "SELECT 1 FROM scans WHERE organization_id = ? AND id != ? LIMIT 1",
+            (user["organization_id"], excluded_ids[0]),
         ).fetchone()
     else:
         prior_scan = connection.execute(
-            "SELECT 1 FROM scans WHERE organization_id = ? AND requested_by = ? AND id != ? LIMIT 1",
-            (user["organization_id"], user["id"], exclude_scan_id),
+            "SELECT 1 FROM scans WHERE organization_id = ? LIMIT 1",
+            (user["organization_id"],),
         ).fetchone()
-    prior_audit = connection.execute(
-        "SELECT 1 FROM audit_events WHERE organization_id = ? AND actor_id = ? AND action = 'scan.launch_requested' LIMIT 1",
-        (user["organization_id"], user["id"]),
-    ).fetchone()
+    prior_audit = None
+    if claim is None:
+        prior_audit = connection.execute(
+            "SELECT 1 FROM audit_events WHERE organization_id = ? AND action = 'scan.launch_requested' LIMIT 1",
+            (user["organization_id"],),
+        ).fetchone()
     return prior_scan is None and prior_audit is None
 
 
-def service_for_quote(connection: Connection, user: Row, assessment_mode: str, service_level: str) -> tuple[str, dict[str, Any]]:
+def service_for_quote(
+    connection: Connection,
+    user: Row,
+    assessment_mode: str,
+    service_level: str,
+    request_fingerprint: str | None = None,
+) -> tuple[str, dict[str, Any]]:
     if assessment_mode == "ethical_pentesting":
         key = "ethical_pentest"
     elif service_level == "deep":
         key = "deep_va"
-    elif free_trial_available(connection, user):
+    elif free_trial_available(connection, user, request_fingerprint=request_fingerprint):
         key = "free_basic_va"
     else:
         key = "standard_va"
@@ -123,12 +157,19 @@ def create_quote(
     target: str,
     assessment_mode: str,
     service_level: str,
+    request_fingerprint: str | None = None,
 ) -> dict[str, Any]:
     connection.execute(
         "DELETE FROM scan_quotes WHERE redeemed_at IS NULL AND expires_at <= ?",
         (_iso(_now()),),
     )
-    service_id, service = service_for_quote(connection, user, assessment_mode, service_level)
+    service_id, service = service_for_quote(
+        connection,
+        user,
+        assessment_mode,
+        service_level,
+        request_fingerprint,
+    )
     wallet = wallet_snapshot(connection, user)
     cost = int(service["credits"])
     token = secrets.token_urlsafe(32)
@@ -138,8 +179,9 @@ def create_quote(
         """
         INSERT INTO scan_quotes (
             quote_token, user_id, organization_id, target_fingerprint, assessment_mode,
-            service_level, scan_tier, credit_cost, balance_after, expires_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            service_level, scan_tier, credit_cost, balance_after, expires_at,
+            request_fingerprint, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             token,
@@ -152,6 +194,7 @@ def create_quote(
             cost,
             wallet["total"] - cost,
             _iso(expires_at),
+            request_fingerprint,
             _iso(now),
         ),
     )
@@ -208,15 +251,31 @@ def reserve_scan_credits(connection: Connection, user: Row, quote: Row, scan_id:
     if claimed.rowcount != 1:
         raise ValueError("This scan-cost estimate has expired or was already used.")
     if quote["scan_tier"] == "free_preview":
-        if not free_trial_available(connection, user, exclude_scan_id=scan_id):
-            raise ValueError("The free basic assessment has already been used.")
+        if not free_trial_available(
+            connection,
+            user,
+            exclude_scan_id=scan_id,
+            request_fingerprint=quote["request_fingerprint"],
+        ):
+            raise ValueError("The one-time free basic assessment has already been used by this organization.")
+        existing_claim = connection.execute(
+            "SELECT user_id FROM free_trial_claims WHERE organization_id = ? LIMIT 1",
+            (user["organization_id"],),
+        ).fetchone()
+        if existing_claim is not None and int(existing_claim["user_id"]) != int(user["id"]):
+            raise ValueError("The one-time free basic assessment has already been claimed by this organization.")
         connection.execute(
             """
-            INSERT INTO free_trial_claims (user_id, organization_id, scan_id, status, claimed_at, updated_at)
-            VALUES (?, ?, ?, 'reserved', ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET scan_id = excluded.scan_id, status = 'reserved', updated_at = excluded.updated_at
+            INSERT INTO free_trial_claims (
+                user_id, organization_id, scan_id, status, request_fingerprint, claimed_at, updated_at
+            ) VALUES (?, ?, ?, 'reserved', ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                scan_id = excluded.scan_id,
+                status = 'reserved',
+                request_fingerprint = excluded.request_fingerprint,
+                updated_at = excluded.updated_at
             """,
-            (user["id"], user["organization_id"], scan_id, now, now),
+            (user["id"], user["organization_id"], scan_id, quote["request_fingerprint"], now, now),
         )
     elif cost > 0:
         wallet = wallet_snapshot(connection, user)

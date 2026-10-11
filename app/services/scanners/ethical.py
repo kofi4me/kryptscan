@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
-from xml.etree import ElementTree
+from defusedxml import ElementTree
 
 from app.models import Finding
 from app.services.reporting import build_assessment_report

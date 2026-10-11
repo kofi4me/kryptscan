@@ -1,0 +1,9 @@
+[kryptscan]
+enabled = true
+filter = kryptscan
+logpath = /var/log/nginx/access.log
+backend = auto
+port = http,https
+findtime = 10m
+maxretry = 20
+bantime = 1h

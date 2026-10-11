@@ -139,6 +139,7 @@ CREATE TABLE IF NOT EXISTS scan_quotes (
     balance_after INTEGER NOT NULL,
     expires_at TEXT NOT NULL,
     redeemed_at TEXT,
+    request_fingerprint TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (organization_id) REFERENCES organizations(id)
@@ -149,6 +150,7 @@ CREATE TABLE IF NOT EXISTS free_trial_claims (
     organization_id INTEGER NOT NULL,
     scan_id INTEGER,
     status TEXT NOT NULL,
+    request_fingerprint TEXT,
     claimed_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id),
@@ -283,6 +285,7 @@ def init_db() -> None:
         _ensure_user_columns(connection)
         _ensure_engagement_columns(connection)
         _ensure_scan_columns(connection)
+        _ensure_credit_columns(connection)
         _ensure_table(connection, "entitlements")
         _ensure_table(connection, "payments")
         _ensure_table(connection, "credit_wallets")
@@ -370,6 +373,16 @@ def _ensure_scan_columns(connection: sqlite3.Connection) -> None:
             connection.execute(
                 f"ALTER TABLE scans ADD COLUMN {column_name} {column_type}"
             )
+
+
+def _ensure_credit_columns(connection: sqlite3.Connection) -> None:
+    for table_name in ("scan_quotes", "free_trial_claims"):
+        columns = {
+            row[1]
+            for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        }
+        if "request_fingerprint" not in columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN request_fingerprint TEXT")
 
 
 def _ensure_table(connection: sqlite3.Connection, table_name: str) -> None:

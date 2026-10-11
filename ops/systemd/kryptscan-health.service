@@ -1,0 +1,8 @@
+[Unit]
+Description=Check KryptScan application, worker, and disk health
+After=network-online.target kryptnet-scan.service docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/kryptnet-services/kryptscan-app/ops/kryptscan-healthcheck.sh

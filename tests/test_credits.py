@@ -170,6 +170,105 @@ class CreditLedgerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already used"):
             reserve_scan_credits(self.connection, self.user, quote, 4)
 
+    def test_free_trial_is_shared_by_the_organization(self) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO users (id, organization_id, email, role, is_verified, created_at)
+            VALUES (2, 1, 'analyst@example.com', 'analyst', 1, '2026-09-30T12:00:00+00:00')
+            """
+        )
+        analyst = self.connection.execute("SELECT * FROM users WHERE id = 2").fetchone()
+        quote_payload = create_quote(
+            self.connection,
+            self.user,
+            target="example.com",
+            assessment_mode="vulnerability_assessment",
+            service_level="standard",
+        )
+        quote = load_valid_quote(
+            self.connection,
+            self.user,
+            quote_token=quote_payload["quote_token"],
+            target="example.com",
+            assessment_mode="vulnerability_assessment",
+            service_level="standard",
+        )
+        self._insert_scan(5, "free_preview")
+        reserve_scan_credits(self.connection, self.user, quote, 5)
+        finalize_scan_credits(self.connection, self.user, 5)
+
+        analyst_quote = create_quote(
+            self.connection,
+            analyst,
+            target="example.com",
+            assessment_mode="vulnerability_assessment",
+            service_level="standard",
+        )
+        self.assertEqual(analyst_quote["service"]["id"], "standard_va")
+
+    def test_refunded_free_trial_can_be_retried(self) -> None:
+        quote_payload = create_quote(
+            self.connection,
+            self.user,
+            target="example.com",
+            assessment_mode="vulnerability_assessment",
+            service_level="standard",
+        )
+        quote = load_valid_quote(
+            self.connection,
+            self.user,
+            quote_token=quote_payload["quote_token"],
+            target="example.com",
+            assessment_mode="vulnerability_assessment",
+            service_level="standard",
+        )
+        self._insert_scan(6, "free_preview")
+        reserve_scan_credits(self.connection, self.user, quote, 6)
+        refund_scan_credits(self.connection, self.user, 6, "worker unavailable")
+
+        retry = create_quote(
+            self.connection,
+            self.user,
+            target="example.com",
+            assessment_mode="vulnerability_assessment",
+            service_level="standard",
+        )
+        self.assertEqual(retry["service"]["id"], "free_basic_va")
+
+    def test_network_fingerprint_caps_cross_organization_free_trials(self) -> None:
+        fingerprint = "network-hmac"
+        for organization_id in (2, 3, 4):
+            self.connection.execute(
+                "INSERT INTO organizations (id, name, email_domain, created_at) VALUES (?, ?, ?, '2026-09-30')",
+                (organization_id, f"Org {organization_id}", f"org{organization_id}.example"),
+            )
+            self.connection.execute(
+                """
+                INSERT INTO users (id, organization_id, email, role, is_verified, created_at)
+                VALUES (?, ?, ?, 'owner', 1, '2026-09-30')
+                """,
+                (organization_id, organization_id, f"owner@org{organization_id}.example"),
+            )
+        for organization_id in (2, 3):
+            self.connection.execute(
+                """
+                INSERT INTO free_trial_claims (
+                    user_id, organization_id, status, request_fingerprint, claimed_at, updated_at
+                ) VALUES (?, ?, 'consumed', ?, '2026-09-30', '2026-09-30')
+                """,
+                (organization_id, organization_id, fingerprint),
+            )
+        third_user = self.connection.execute("SELECT * FROM users WHERE id = 4").fetchone()
+        quote = create_quote(
+            self.connection,
+            third_user,
+            target="org4.example",
+            assessment_mode="vulnerability_assessment",
+            service_level="standard",
+            request_fingerprint=fingerprint,
+        )
+        self.assertEqual(quote["service"]["id"], "standard_va")
+
 
 if __name__ == "__main__":
     unittest.main()
