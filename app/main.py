@@ -508,7 +508,7 @@ def _serialize_entitlement(entitlement: Row | None) -> dict:
 PLAN_CATALOG = {
     "professional": {
         "name": "Professional",
-        "amount_cents": 7900,
+        "amount_cents": 2900,
         "currency": "USD",
         "credits": 10,
         "access_days": 365,
@@ -517,7 +517,7 @@ PLAN_CATALOG = {
     },
     "business": {
         "name": "Business",
-        "amount_cents": 19900,
+        "amount_cents": 6900,
         "currency": "USD",
         "credits": 30,
         "access_days": 365,
@@ -526,7 +526,7 @@ PLAN_CATALOG = {
     },
     "msp": {
         "name": "MSP",
-        "amount_cents": 49900,
+        "amount_cents": 9900,
         "currency": "USD",
         "credits": 100,
         "access_days": 365,
@@ -546,9 +546,9 @@ def _plan_details(plan: str) -> dict:
 
 
 PUBLIC_PRICING_PLANS = [
-    {"id": "professional", "name": "Professional", "price_usd": 79, "credits": 10, "audience": "IT professionals and small businesses"},
-    {"id": "business", "name": "Business", "price_usd": 199, "credits": 30, "audience": "Internal security teams"},
-    {"id": "msp", "name": "MSP", "price_usd": 499, "credits": 100, "audience": "Consultants and managed service providers"},
+    {"id": "professional", "name": "Professional", "price_usd": 29, "credits": 10, "audience": "IT professionals and small businesses"},
+    {"id": "business", "name": "Business", "price_usd": 69, "credits": 30, "audience": "Internal security teams"},
+    {"id": "msp", "name": "MSP", "price_usd": 99, "credits": 100, "audience": "Consultants and managed service providers"},
 ]
 
 
