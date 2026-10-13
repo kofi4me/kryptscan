@@ -80,6 +80,55 @@ def wallet_snapshot(connection: Connection, user: Row) -> dict[str, int]:
     return {"purchased": purchased, "promotional": promotional, "total": purchased + promotional}
 
 
+def grant_payment_credits(
+    connection: Connection,
+    *,
+    payment: Row,
+    credits: int,
+) -> dict[str, Any]:
+    if credits <= 0:
+        raise ValueError("A paid credit package must grant at least one credit.")
+    user = connection.execute(
+        "SELECT * FROM users WHERE id = ? AND organization_id = ?",
+        (payment["created_by"], payment["organization_id"]),
+    ).fetchone()
+    if user is None:
+        raise ValueError("The payment owner account no longer exists.")
+    now = _iso(_now())
+    ensure_wallet(connection, user)
+    inserted = connection.execute(
+        """
+        INSERT OR IGNORE INTO credit_transactions (
+            user_id, organization_id, payment_id, transaction_type,
+            purchased_delta, source, details_json, created_at
+        ) VALUES (?, ?, ?, 'purchase_credit', ?, 'payment', ?, ?)
+        """,
+        (
+            user["id"],
+            user["organization_id"],
+            payment["id"],
+            credits,
+            json.dumps({
+                "provider": payment["provider"],
+                "provider_reference": payment["provider_reference"],
+                "plan": payment["plan"],
+            }),
+            now,
+        ),
+    )
+    if inserted.rowcount != 1:
+        return {"credits_granted": 0, "already_granted": True, "credit_balance": wallet_snapshot(connection, user)}
+    connection.execute(
+        """
+        UPDATE credit_wallets
+        SET purchased_credits = purchased_credits + ?, updated_at = ?
+        WHERE user_id = ? AND organization_id = ?
+        """,
+        (credits, now, user["id"], user["organization_id"]),
+    )
+    return {"credits_granted": credits, "already_granted": False, "credit_balance": wallet_snapshot(connection, user)}
+
+
 def free_trial_available(
     connection: Connection,
     user: Row,

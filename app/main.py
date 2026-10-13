@@ -14,7 +14,7 @@ import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from sqlite3 import Row
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -77,6 +77,7 @@ from app.services.credits import (
     coupon_hash,
     create_quote,
     finalize_scan_credits,
+    grant_payment_credits,
     load_valid_quote,
     redeem_coupon,
     refund_scan_credits,
@@ -505,29 +506,32 @@ def _serialize_entitlement(entitlement: Row | None) -> dict:
 
 
 PLAN_CATALOG = {
-    "starter": {
-        "name": "Starter",
-        "amount_cents": 9900,
-        "currency": "USD",
-        "access_days": 365,
-        "payment_path": "/checkout/starter",
-        "description": "One-time payment for a small business vulnerability assessment package.",
-    },
     "professional": {
         "name": "Professional",
-        "amount_cents": 29900,
+        "amount_cents": 7900,
         "currency": "USD",
+        "credits": 10,
         "access_days": 365,
         "payment_path": "/checkout/professional",
-        "description": "One-time payment for professional vulnerability assessment and ethical testing work.",
+        "description": "Ten purchased credits for IT professionals and small businesses.",
     },
-    "msp_scale": {
-        "name": "MSP Scale",
-        "amount_cents": 79900,
+    "business": {
+        "name": "Business",
+        "amount_cents": 19900,
         "currency": "USD",
+        "credits": 30,
         "access_days": 365,
-        "payment_path": "/checkout/msp-scale",
-        "description": "One-time payment for larger MSP delivery and multi-client testing work.",
+        "payment_path": "/checkout/business",
+        "description": "Thirty purchased credits for internal security teams.",
+    },
+    "msp": {
+        "name": "MSP",
+        "amount_cents": 49900,
+        "currency": "USD",
+        "credits": 100,
+        "access_days": 365,
+        "payment_path": "/checkout/msp",
+        "description": "One hundred purchased credits for consultants and managed service providers.",
     },
 }
 
@@ -542,9 +546,9 @@ def _plan_details(plan: str) -> dict:
 
 
 PUBLIC_PRICING_PLANS = [
-    {"id": "professional", "name": "Professional", "price_usd_monthly": 79, "credits": 10, "audience": "IT professionals and small businesses"},
-    {"id": "business", "name": "Business", "price_usd_monthly": 199, "credits": 30, "audience": "Internal security teams"},
-    {"id": "msp", "name": "MSP", "price_usd_monthly": 499, "credits": 100, "audience": "Consultants and managed service providers"},
+    {"id": "professional", "name": "Professional", "price_usd": 79, "credits": 10, "audience": "IT professionals and small businesses"},
+    {"id": "business", "name": "Business", "price_usd": 199, "credits": 30, "audience": "Internal security teams"},
+    {"id": "msp", "name": "MSP", "price_usd": 499, "credits": 100, "audience": "Consultants and managed service providers"},
 ]
 
 
@@ -1438,7 +1442,12 @@ def public_pricing() -> dict:
     return {
         "plans": PUBLIC_PRICING_PLANS,
         "services": [{"id": key, **value} for key, value in CREDIT_CATALOG.items()],
-        "payment_available": False,
+        "payment_available": bool(
+            settings.payment_required
+            and not settings.payment_demo_mode
+            and settings.kryptnet_payment_api_url
+            and settings.kryptnet_payment_webhook_secret
+        ),
         "currency": "USD",
     }
 
@@ -2336,6 +2345,14 @@ def create_payment_checkout(
     _require_completed_registration(user)
     plan = _plan_details(payload.plan)
     provider_reference = f"kryptnet_{secrets.token_hex(12)}"
+    checkout_url = f"{plan['payment_url']}?{urlencode({
+        'reference': provider_reference,
+        'email': user['email'],
+        'amount_cents': plan['amount_cents'],
+        'currency': plan['currency'],
+        'credits': plan['credits'],
+        'return_url': str(request.base_url),
+    })}"
     now = utcnow().isoformat()
     expires_at = (utcnow() + timedelta(days=plan["access_days"])).isoformat()
     with get_connection() as connection:
@@ -2368,8 +2385,9 @@ def create_payment_checkout(
                 user["email"],
                 json.dumps(
                     {
-                        "checkout_url": plan["payment_url"],
-                        "payment_type": "one_time",
+                        "checkout_url": checkout_url,
+                        "payment_type": "credit_pack",
+                        "credits": plan["credits"],
                         "accepted_methods": ["debit_card", "credit_card"],
                     }
                 ),
@@ -2398,8 +2416,9 @@ def create_payment_checkout(
                 "plan": plan["id"],
                 "amount_cents": plan["amount_cents"],
                 "provider_reference": provider_reference,
-                "checkout_url": plan["payment_url"],
-                "payment_type": "one_time",
+                "checkout_url": checkout_url,
+                "payment_type": "credit_pack",
+                "credits": plan["credits"],
             },
         )
     return {
@@ -2407,7 +2426,7 @@ def create_payment_checkout(
         "plan": plan,
         "status": "checkout_created",
         "payment_access_status": "active" if settings.payment_demo_mode else "pending_payment",
-        "checkout_url": plan["payment_url"],
+        "checkout_url": checkout_url,
         "provider_reference": provider_reference,
         "message": (
             "KryptNet debit/credit checkout link prepared. Demo mode activated paid access locally."
@@ -2442,6 +2461,11 @@ def kryptnet_payment_webhook(request: Request, payload: PaymentWebhookRequest) -
         ).fetchone()
         if payment is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment reference not found.")
+        previous_status = payment["status"].strip().lower()
+        ignored_status = None
+        if previous_status in paid_statuses and normalized_status not in paid_statuses:
+            ignored_status = normalized_status
+            normalized_status = previous_status
         plan = _plan_details(payment["plan"])
         if payload.plan and payload.plan.strip().lower() != plan["id"]:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment plan mismatch.")
@@ -2456,6 +2480,7 @@ def kryptnet_payment_webhook(request: Request, payload: PaymentWebhookRequest) -
                 "webhook_status": normalized_status,
                 "webhook_received_at": now,
                 "webhook_payer_email": payload.payer_email,
+                "ignored_status_after_payment": ignored_status,
             }
         )
         connection.execute(
@@ -2464,6 +2489,7 @@ def kryptnet_payment_webhook(request: Request, payload: PaymentWebhookRequest) -
         )
 
         access_status = "unchanged"
+        credit_result = {"credits_granted": 0, "already_granted": False}
         if normalized_status in paid_statuses:
             expires_at = (utcnow() + timedelta(days=plan["access_days"])).isoformat()
             connection.execute(
@@ -2477,12 +2503,16 @@ def kryptnet_payment_webhook(request: Request, payload: PaymentWebhookRequest) -
                 """,
                 (payment["organization_id"], plan["id"], expires_at, now),
             )
+            try:
+                credit_result = grant_payment_credits(
+                    connection,
+                    payment=payment,
+                    credits=int(plan["credits"]),
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
             access_status = "active"
         elif normalized_status in failed_statuses:
-            connection.execute(
-                "UPDATE entitlements SET status = 'expired' WHERE organization_id = ? AND plan = ?",
-                (payment["organization_id"], plan["id"]),
-            )
             access_status = "inactive"
 
         connection.execute(
@@ -2498,13 +2528,21 @@ def kryptnet_payment_webhook(request: Request, payload: PaymentWebhookRequest) -
                         "provider_reference": payload.provider_reference,
                         "status": normalized_status,
                         "access_status": access_status,
+                        "credits_granted": credit_result["credits_granted"],
+                        "duplicate_delivery": credit_result["already_granted"],
                     }
                 ),
                 now,
             ),
         )
 
-    return {"status": "accepted", "payment_status": normalized_status, "payment_access_status": access_status}
+    return {
+        "status": "accepted",
+        "payment_status": normalized_status,
+        "payment_access_status": access_status,
+        "credits_granted": credit_result["credits_granted"],
+        "duplicate_delivery": credit_result["already_granted"],
+    }
 
 
 @app.post("/api/payments/submit")
@@ -2670,7 +2708,6 @@ def create_engagement(
     ]
     now = utcnow().isoformat()
     with get_connection() as connection:
-        _require_entitlement(connection, user)
         cursor = connection.execute(
             """
             INSERT INTO engagements (

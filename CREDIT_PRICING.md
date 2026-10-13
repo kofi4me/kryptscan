@@ -20,15 +20,15 @@
 
 Deep VA adds expanded safe network and web surface mapping. Ethical Pen-Testing adds the approved rules-of-engagement workflow and deeper content/API validation.
 
-## Planned Monthly Packages
+## Credit Packs
 
-| Plan | Monthly price | Included credits |
+| Plan | One-time price | Included credits |
 | --- | ---: | ---: |
 | Professional | $79 | 10 |
 | Business | $199 | 30 |
 | MSP | $499 | 100 |
 
-Checkout remains disabled during launch testing. Activating commercial payments requires mapping successful payment webhooks to purchased-credit ledger entries.
+Successful verified payment webhooks add the selected pack to the purchaser's purchased-credit balance. Webhook retries are idempotent and cannot add the same purchase twice.
 
 ## Credit Lifecycle
 

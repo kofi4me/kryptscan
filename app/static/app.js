@@ -456,7 +456,7 @@ async function requestScanQuote() {
     ? payload.free_trial
       ? "No credits will be charged. PDF, JSON, email, AI, and deep scanning are not included."
       : `Current balance: ${payload.credit_balance.total}. Balance after scan: ${payload.balance_after}.`
-    : `This scan requires ${payload.service.credits} credits, but your current balance is ${payload.credit_balance.total}. Redeem a coupon or purchase credits when checkout opens.`;
+    : `This scan requires ${payload.service.credits} credits, but your current balance is ${payload.credit_balance.total}. Redeem a coupon or purchase a credit pack.`;
   document.getElementById("credit-balance-value").textContent = payload.credit_balance.total;
   updateScanActionState();
 }
@@ -543,8 +543,8 @@ async function handleCheckoutPlan(plan) {
   setStatus(
     "dashboard-status",
     accessActive
-      ? `${planName} KryptNet debit/credit checkout link created. Paid access is active.`
-      : `${planName} KryptNet debit/credit checkout link created. Complete checkout to activate paid access.`,
+      ? `${planName} checkout created. Purchased credits are active.`
+      : `${planName} checkout created. Complete payment to add the credits to your balance.`,
     accessActive ? "success" : "neutral"
   );
   if (payload.checkout_url) {
@@ -1260,17 +1260,17 @@ function renderCommercialReadiness(payload) {
     element.innerHTML = "";
     return;
   }
-  const paymentActive = payload.entitlement?.status === "active";
+  const paymentActive = (payload.stats?.credit_balance?.purchased ?? 0) > 0;
   element.innerHTML = `
     <article class="readiness-card">
       <strong>Payment</strong>
       <span class="pill ${paymentActive ? "completed" : "warn"}">${paymentActive ? "paid" : "required"}</span>
       <p>${
         paymentActive
-            ? `Paid package ${escapeHtml(payload.entitlement.plan)} access is valid until ${new Date(payload.entitlement.expires_at).toLocaleDateString()}.`
-            : "Complete a one-time payment before launching full vulnerability scans or ethical pen-testing."
+            ? `${payload.stats.credit_balance.purchased} purchased credits are available.`
+            : "Purchase credits before launching paid vulnerability assessments or ethical pen-testing."
       }</p>
-      ${paymentActive ? "" : `<p>Choose one service package. Debit and credit card details stay inside KryptNet checkout.</p>`}
+      ${paymentActive ? "" : `<p>Card details stay inside the hosted checkout and are not stored by KryptScan.</p>`}
     </article>
   `;
 }

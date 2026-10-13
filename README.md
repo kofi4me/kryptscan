@@ -65,24 +65,25 @@ The app now supports this production user flow:
 3. Returning user logs in by verified email.
 4. User selects Vulnerability Assessment or Ethical Pen-Testing.
 5. Vulnerability Assessment can run a free partial scan with web summary only.
-6. Full Vulnerability Scan and Ethical Pen-Testing require one-time KryptNet checkout payment.
+6. Paid assessments require sufficient purchased or promotional credits and explicit acceptance of the quoted credit charge.
 7. Paid reports are generated as PDFs and delivered to/downloaded by the verified user.
 
 ## KryptNet Payment API Integration Path
 
-The dashboard includes three one-time service package buttons:
+The dashboard includes three one-time credit-pack buttons:
 
-- Starter
 - Professional
-- MSP Scale
+- Business
+- MSP
 
-Each button creates a KryptNet Payment API checkout link for debit or credit card payment. The app does not collect card numbers, CVC, routing numbers, or bank account numbers.
+Each button creates a unique KryptNet Payment API checkout reference for debit or credit card payment. The app does not collect card numbers, CVC, routing numbers, or bank account numbers. A verified successful webhook grants 10, 30, or 100 purchased credits to the purchaser. Repeated webhook delivery is idempotent.
 
-Production access activates only after `/api/payments/webhook/kryptnet` receives a verified payment event. Configure:
+The hosted checkout must charge the server-issued amount and return the same reference in its callback to `/api/payments/webhook/kryptnet`. KryptScan independently validates the reference, plan, amount, and currency before granting credits. Configure:
 
 ```env
 KRYPTNET_PAYMENT_API_URL=https://payments.kryptnet.com/api
 KRYPTNET_PAYMENT_WEBHOOK_SECRET=replace-with-payment-webhook-secret
+PAYMENT_REQUIRED=true
 PAYMENT_DEMO_MODE=false
 ```
 

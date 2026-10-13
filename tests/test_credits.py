@@ -9,6 +9,7 @@ from app.services.credits import (
     create_quote,
     finalize_scan_credits,
     free_trial_available,
+    grant_payment_credits,
     load_valid_quote,
     redeem_coupon,
     refund_scan_credits,
@@ -129,6 +130,39 @@ class CreditLedgerTests(unittest.TestCase):
         self.assertEqual(result["credit_balance"]["promotional"], 5)
         with self.assertRaisesRegex(ValueError, "already been redeemed"):
             redeem_coupon(self.connection, self.user, "TESTER-5")
+
+    def test_verified_payment_grants_purchased_credits_once(self) -> None:
+        cursor = self.connection.execute(
+            """
+            INSERT INTO payments (
+                organization_id, provider, plan, amount_cents, currency,
+                payment_method, status, provider_reference, payer_name,
+                payer_email, safe_details_json, created_by, created_at
+            ) VALUES (
+                1, 'kryptnet_payment_api', 'professional', 7900, 'USD',
+                'debit_credit_checkout', 'paid', 'payment-reference-001',
+                'Example', 'tester@example.com', '{}', 1, '2026-09-30T12:00:00+00:00'
+            )
+            """
+        )
+        payment = self.connection.execute(
+            "SELECT * FROM payments WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+
+        first = grant_payment_credits(self.connection, payment=payment, credits=10)
+        second = grant_payment_credits(self.connection, payment=payment, credits=10)
+
+        self.assertEqual(first["credits_granted"], 10)
+        self.assertFalse(first["already_granted"])
+        self.assertEqual(second["credits_granted"], 0)
+        self.assertTrue(second["already_granted"])
+        self.assertEqual(wallet_snapshot(self.connection, self.user)["purchased"], 10)
+        transaction_count = self.connection.execute(
+            "SELECT COUNT(*) FROM credit_transactions WHERE payment_id = ?",
+            (payment["id"],),
+        ).fetchone()[0]
+        self.assertEqual(transaction_count, 1)
 
     def test_quote_is_bound_to_target_mode_and_service(self) -> None:
         payload = create_quote(

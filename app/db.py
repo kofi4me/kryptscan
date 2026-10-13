@@ -84,11 +84,15 @@ CREATE TABLE IF NOT EXISTS credit_wallets (
     FOREIGN KEY (organization_id) REFERENCES organizations(id)
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_provider_reference
+ON payments(provider_reference);
+
 CREATE TABLE IF NOT EXISTS credit_transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     organization_id INTEGER NOT NULL,
     scan_id INTEGER,
+    payment_id INTEGER,
     transaction_type TEXT NOT NULL,
     purchased_delta INTEGER NOT NULL DEFAULT 0,
     promotional_delta INTEGER NOT NULL DEFAULT 0,
@@ -96,8 +100,13 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
     details_json TEXT NOT NULL,
     created_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (organization_id) REFERENCES organizations(id)
+    FOREIGN KEY (organization_id) REFERENCES organizations(id),
+    FOREIGN KEY (payment_id) REFERENCES payments(id)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_credit_transactions_payment_credit
+ON credit_transactions(payment_id)
+WHERE payment_id IS NOT NULL AND transaction_type = 'purchase_credit';
 
 CREATE TABLE IF NOT EXISTS coupons (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -376,6 +385,9 @@ def _ensure_scan_columns(connection: sqlite3.Connection) -> None:
 
 
 def _ensure_credit_columns(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_provider_reference ON payments(provider_reference)"
+    )
     for table_name in ("scan_quotes", "free_trial_claims"):
         columns = {
             row[1]
@@ -383,6 +395,19 @@ def _ensure_credit_columns(connection: sqlite3.Connection) -> None:
         }
         if "request_fingerprint" not in columns:
             connection.execute(f"ALTER TABLE {table_name} ADD COLUMN request_fingerprint TEXT")
+    transaction_columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(credit_transactions)").fetchall()
+    }
+    if "payment_id" not in transaction_columns:
+        connection.execute("ALTER TABLE credit_transactions ADD COLUMN payment_id INTEGER")
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_credit_transactions_payment_credit
+        ON credit_transactions(payment_id)
+        WHERE payment_id IS NOT NULL AND transaction_type = 'purchase_credit'
+        """
+    )
 
 
 def _ensure_table(connection: sqlite3.Connection, table_name: str) -> None:
