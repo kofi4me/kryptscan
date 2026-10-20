@@ -2473,14 +2473,15 @@ def create_payment_checkout(
     if settings.payment_provider != "kryptnet_payment_api":
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Payment provider is not configured.")
     provider_reference = f"kryptnet_{secrets.token_hex(12)}"
-    checkout_url = f"{plan['payment_url']}?{urlencode({
+    checkout_query = urlencode({
         'reference': provider_reference,
         'email': user['email'],
         'amount_cents': plan['amount_cents'],
         'currency': plan['currency'],
         'credits': plan['credits'],
         'return_url': str(request.base_url),
-    })}"
+    })
+    checkout_url = f"{plan['payment_url']}?{checkout_query}"
     now = utcnow().isoformat()
     expires_at = (utcnow() + timedelta(days=plan["access_days"])).isoformat()
     with get_connection() as connection:
