@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 
 from app.config import get_settings
 
@@ -289,24 +289,42 @@ CREATE TABLE IF NOT EXISTS manual_findings (
 
 def init_db() -> None:
     settings = get_settings()
-    with sqlite3.connect(settings.database_path) as connection:
-        connection.executescript(SCHEMA)
-        _ensure_user_columns(connection)
-        _ensure_engagement_columns(connection)
-        _ensure_scan_columns(connection)
-        _ensure_credit_columns(connection)
-        _ensure_table(connection, "entitlements")
-        _ensure_table(connection, "payments")
-        _ensure_table(connection, "credit_wallets")
-        _ensure_table(connection, "credit_transactions")
-        _ensure_table(connection, "coupons")
-        _ensure_table(connection, "coupon_redemptions")
-        _ensure_table(connection, "scan_quotes")
-        _ensure_table(connection, "free_trial_claims")
-        _ensure_table(connection, "password_resets")
-        _ensure_table(connection, "engagements")
-        _ensure_table(connection, "manual_findings")
-        _ensure_table(connection, "audit_events")
+    with closing(sqlite3.connect(settings.database_path)) as connection:
+        with connection:
+            _prepare_legacy_schema(connection)
+            connection.executescript(SCHEMA)
+            _ensure_user_columns(connection)
+            _ensure_engagement_columns(connection)
+            _ensure_scan_columns(connection)
+            _ensure_credit_columns(connection)
+            _ensure_table(connection, "entitlements")
+            _ensure_table(connection, "payments")
+            _ensure_table(connection, "credit_wallets")
+            _ensure_table(connection, "credit_transactions")
+            _ensure_table(connection, "coupons")
+            _ensure_table(connection, "coupon_redemptions")
+            _ensure_table(connection, "scan_quotes")
+            _ensure_table(connection, "free_trial_claims")
+            _ensure_table(connection, "password_resets")
+            _ensure_table(connection, "engagements")
+            _ensure_table(connection, "manual_findings")
+            _ensure_table(connection, "audit_events")
+
+
+def _prepare_legacy_schema(connection: sqlite3.Connection) -> None:
+    """Apply upgrades needed before indexes in SCHEMA are created."""
+    credit_transactions_exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'credit_transactions'"
+    ).fetchone()
+    if not credit_transactions_exists:
+        return
+
+    transaction_columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(credit_transactions)").fetchall()
+    }
+    if "payment_id" not in transaction_columns:
+        connection.execute("ALTER TABLE credit_transactions ADD COLUMN payment_id INTEGER")
 
 
 def _ensure_user_columns(connection: sqlite3.Connection) -> None:
