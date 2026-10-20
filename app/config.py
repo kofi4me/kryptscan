@@ -46,6 +46,7 @@ class Settings:
     app_secret: str
     app_host: str
     app_port: int
+    public_base_url: str
     base_dir: Path
     database_path: Path
     reports_dir: Path
@@ -102,8 +103,14 @@ class Settings:
     prowler_path: str
     scoutsuite_path: str
     cloud_checks_enabled: bool
+    payment_provider: str
     kryptnet_payment_api_url: str
     kryptnet_payment_webhook_secret: str
+    authorize_net_environment: str
+    authorize_net_api_login_id: str
+    authorize_net_transaction_key: str
+    authorize_net_signature_key: str
+    authorize_net_timeout_seconds: int
     payment_required: bool
     payment_demo_mode: bool
     openai_api_key: str
@@ -140,6 +147,7 @@ def get_settings() -> Settings:
         app_secret=_env("APP_SECRET", "development-secret"),
         app_host=_env("APP_HOST", "127.0.0.1"),
         app_port=_env_int("APP_PORT", 8000),
+        public_base_url=_env("PUBLIC_BASE_URL", "").strip().rstrip("/"),
         base_dir=BASE_DIR,
         database_path=database_path,
         reports_dir=reports_dir,
@@ -204,8 +212,14 @@ def get_settings() -> Settings:
         prowler_path=_env("PROWLER_PATH", "prowler"),
         scoutsuite_path=_env("SCOUTSUITE_PATH", "ScoutSuite"),
         cloud_checks_enabled=_env_bool("CLOUD_CHECKS_ENABLED", False),
+        payment_provider=_env("PAYMENT_PROVIDER", "authorize_net").strip().lower(),
         kryptnet_payment_api_url=_env("KRYPTNET_PAYMENT_API_URL", "https://payments.kryptnet.com/api"),
         kryptnet_payment_webhook_secret=_env("KRYPTNET_PAYMENT_WEBHOOK_SECRET", ""),
+        authorize_net_environment=_env("AUTHORIZE_NET_ENVIRONMENT", "sandbox").strip().lower(),
+        authorize_net_api_login_id=_env("AUTHORIZE_NET_API_LOGIN_ID", ""),
+        authorize_net_transaction_key=_env("AUTHORIZE_NET_TRANSACTION_KEY", ""),
+        authorize_net_signature_key=_env("AUTHORIZE_NET_SIGNATURE_KEY", ""),
+        authorize_net_timeout_seconds=_env_int("AUTHORIZE_NET_TIMEOUT_SECONDS", 20),
         payment_required=_env_bool("PAYMENT_REQUIRED", False),
         payment_demo_mode=_env_bool("PAYMENT_DEMO_MODE", False),
         openai_api_key=_env("OPENAI_API_KEY", ""),

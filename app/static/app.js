@@ -70,7 +70,10 @@ document.addEventListener("DOMContentLoaded", () => {
     button.addEventListener("click", () => openSelectedTool(button.dataset.choiceMode));
   });
   initDashboardMockup();
-  ensureCsrfCookie().then(() => loadDashboard(false, { showChoiceWhenAuthenticated: true }));
+  ensureCsrfCookie().then(async () => {
+    await loadDashboard(false, { showChoiceWhenAuthenticated: true });
+    showPaymentReturnStatus();
+  });
   const requestedAuthMode = new URLSearchParams(window.location.search).get("auth");
   if (["signin", "signup"].includes(requestedAuthMode)) openAuthModal(requestedAuthMode);
 });
@@ -547,10 +550,42 @@ async function handleCheckoutPlan(plan) {
       : `${planName} checkout created. Complete payment to add the credits to your balance.`,
     accessActive ? "success" : "neutral"
   );
+  if (payload.checkout_url && payload.checkout_token) {
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = payload.checkout_url;
+    const token = document.createElement("input");
+    token.type = "hidden";
+    token.name = "token";
+    token.value = payload.checkout_token;
+    form.appendChild(token);
+    document.body.appendChild(form);
+    form.submit();
+    return;
+  }
   if (payload.checkout_url) {
     window.open(payload.checkout_url, "_blank", "noopener");
   }
   await loadDashboard();
+}
+
+function showPaymentReturnStatus() {
+  const url = new URL(window.location.href);
+  const paymentStatus = url.searchParams.get("payment");
+  if (paymentStatus === "complete") {
+    setStatus(
+      "dashboard-status",
+      "Payment was submitted to Authorize.Net. Your credit balance will update after secure confirmation.",
+      "neutral"
+    );
+  } else if (paymentStatus === "cancelled") {
+    setStatus("dashboard-status", "Payment checkout was cancelled. No credits were charged.", "neutral");
+  } else {
+    return;
+  }
+  url.searchParams.delete("payment");
+  url.searchParams.delete("reference");
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
 async function handleRequestCode(event) {

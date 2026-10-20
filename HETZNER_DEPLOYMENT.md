@@ -126,6 +126,7 @@ KRYPTNET_DOMAIN=kryptscan.kryptnet.org
 KRYPTNET_EMAIL=security@kryptnet.org
 APP_ENV=production
 APP_SECRET=<long-random-secret>
+PUBLIC_BASE_URL=https://kryptscan.kryptnet.org
 TRUSTED_HOSTS=kryptscan.kryptnet.org
 SESSION_COOKIE_SECURE=true
 EMAIL_DELIVERY=smtp
@@ -133,7 +134,11 @@ EMAIL_FROM=security@kryptnet.org
 SMTP_HOST=<smtp-host>
 SMTP_USERNAME=<smtp-user>
 SMTP_PASSWORD=<smtp-password>
-KRYPTNET_PAYMENT_WEBHOOK_SECRET=<real-webhook-secret>
+PAYMENT_PROVIDER=authorize_net
+AUTHORIZE_NET_ENVIRONMENT=production
+AUTHORIZE_NET_API_LOGIN_ID=<authorize-net-api-login-id>
+AUTHORIZE_NET_TRANSACTION_KEY=<authorize-net-transaction-key>
+AUTHORIZE_NET_SIGNATURE_KEY=<authorize-net-signature-key>
 PAYMENT_DEMO_MODE=false
 PAYMENT_REQUIRED=false
 OPENAI_API_KEY=<openai-api-key>
@@ -199,12 +204,12 @@ docker compose --env-file .env.scanner -f docker-compose.production.yml logs -f 
 4. Select Vulnerability Assessment or Ethical Pen-Testing.
 5. Enter an authorized target and confirm target authorization.
 6. Confirm the scanner worker health shows the installed tools.
-7. For pre-payment testing, keep `PAYMENT_REQUIRED=false`. After payment API integration, set `PAYMENT_REQUIRED=true`.
-8. Configure payment webhook:
+7. For pre-payment testing, keep `PAYMENT_REQUIRED=false`. For an Authorize.Net sandbox test, use a non-production `APP_ENV`, set `AUTHORIZE_NET_ENVIRONMENT=sandbox`, and enable `PAYMENT_REQUIRED=true`.
+8. Configure the Authorize.Net `net.authorize.payment.authcapture.created` webhook:
 
 ```text
-POST https://kryptscan.kryptnet.org/api/payments/webhook/kryptnet
-Header: X-KryptNet-Webhook-Secret
+POST https://kryptscan.kryptnet.org/api/payments/webhook/authorize-net
+Signature header: X-ANET-Signature
 ```
 
 9. Confirm the scan progresses through staged scanner work and creates/downloads a PDF report.

@@ -5,6 +5,7 @@ Before commercial deployment, set these values in `.env` or the hosting secret m
 ```env
 APP_ENV=production
 APP_SECRET=replace-with-a-long-random-secret
+PUBLIC_BASE_URL=https://kryptscan.kryptnet.org
 SESSION_COOKIE_SECURE=true
 CSRF_COOKIE_NAME=kryptnet_csrf
 TRUSTED_HOSTS=kryptscan.kryptnet.org
@@ -12,16 +13,22 @@ TRUSTED_PROXY_IPS=127.0.0.1,::1
 RATE_LIMIT_ENABLED=true
 MAX_REQUEST_BODY_BYTES=1048576
 ALLOW_PRIVATE_NETWORK_TARGETS=false
-KRYPTNET_PAYMENT_API_URL=https://payments.kryptnet.com/api
-KRYPTNET_PAYMENT_WEBHOOK_SECRET=replace-with-payment-webhook-secret
+PAYMENT_PROVIDER=authorize_net
+AUTHORIZE_NET_ENVIRONMENT=production
+AUTHORIZE_NET_API_LOGIN_ID=replace-with-api-login-id
+AUTHORIZE_NET_TRANSACTION_KEY=replace-with-transaction-key
+AUTHORIZE_NET_SIGNATURE_KEY=replace-with-signature-key
+PAYMENT_REQUIRED=true
 PAYMENT_DEMO_MODE=false
 ```
 
 Use `ALLOW_PRIVATE_NETWORK_TARGETS=true` only when the scanner runs inside an isolated MSP-controlled network where internal IP testing is expected and authorized.
 
-Payment buttons should point to the KryptNet Payment API checkout. Do not collect card numbers, CVV, routing numbers, or account numbers inside this application.
+Payment buttons request a short-lived Authorize.Net Accept Hosted token. Do not collect card numbers, CVV, routing numbers, or account numbers inside this application.
 
-The application rejects direct payment submissions. Use KryptNet debit/credit checkout plus the verified `/api/payments/webhook/kryptnet` webhook before activating real production access. The payment provider must send `X-KryptNet-Webhook-Secret` with the configured `KRYPTNET_PAYMENT_WEBHOOK_SECRET`.
+The application rejects direct payment submissions. Configure Authorize.Net to send `net.authorize.payment.authcapture.created` events to `/api/payments/webhook/authorize-net`. KryptScan verifies `X-ANET-Signature`, then calls `getTransactionDetails` to confirm the reference, amount, currency, type, and transaction status before granting credits.
+
+Start with `AUTHORIZE_NET_ENVIRONMENT=sandbox` and `PAYMENT_REQUIRED=true` in a non-production environment. Production startup refuses sandbox mode when paid production access is enabled. Keep the API Login ID, Transaction Key, and Signature Key only in the server environment or secret manager.
 
 Never deploy production with `PAYMENT_DEMO_MODE=true`. Demo mode is only for local testing because it activates paid access immediately after checkout link creation.
 

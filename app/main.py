@@ -64,6 +64,13 @@ from app.security import (
     verify_session_token,
 )
 from app.services.auth import AuthService
+from app.services.authorize_net import (
+    AuthorizeNetError,
+    create_hosted_payment_token,
+    get_transaction_details,
+    validate_paid_transaction,
+    verify_webhook_signature,
+)
 from app.services.ownership import (
     authorize_target,
     build_scan_protocols,
@@ -124,7 +131,10 @@ async def security_middleware(request: Request, call_next):
             {"detail": "Request body is too large."},
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
         )
-    webhook_path = request.url.path == "/api/payments/webhook/kryptnet"
+    webhook_path = request.url.path in {
+        "/api/payments/webhook/kryptnet",
+        "/api/payments/webhook/authorize-net",
+    }
     if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not webhook_path:
         blocked = _verify_same_origin_request(request) or _verify_csrf_request(request)
         if blocked is not None:
@@ -151,7 +161,7 @@ async def security_middleware(request: Request, call_next):
             "connect-src 'self'; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
-            "form-action 'self'"
+            "form-action 'self' https://accept.authorize.net https://test.authorize.net"
         ),
     )
     if settings.session_cookie_secure:
@@ -181,12 +191,25 @@ def _assert_secure_config() -> None:
         raise RuntimeError("PAYMENT_DEMO_MODE must be false in production.")
     if settings.scanner_backend == "worker" and not settings.scanner_worker_token:
         raise RuntimeError("SCANNER_WORKER_TOKEN must be set when SCANNER_BACKEND=worker.")
-    if (
-        settings.app_env in {"production", "prod"}
-        and settings.payment_required
-        and not settings.kryptnet_payment_webhook_secret
-    ):
-        raise RuntimeError("Set KRYPTNET_PAYMENT_WEBHOOK_SECRET before running in production.")
+    if settings.app_env in {"production", "prod"} and settings.payment_required:
+        if settings.payment_provider == "authorize_net":
+            required = {
+                "AUTHORIZE_NET_API_LOGIN_ID": settings.authorize_net_api_login_id,
+                "AUTHORIZE_NET_TRANSACTION_KEY": settings.authorize_net_transaction_key,
+                "AUTHORIZE_NET_SIGNATURE_KEY": settings.authorize_net_signature_key,
+            }
+            missing = [name for name, value in required.items() if not value]
+            if missing:
+                raise RuntimeError(f"Set {', '.join(missing)} before enabling production payments.")
+            if settings.authorize_net_environment != "production":
+                raise RuntimeError("AUTHORIZE_NET_ENVIRONMENT must be production when production payments are enabled.")
+            if not settings.public_base_url.startswith("https://"):
+                raise RuntimeError("PUBLIC_BASE_URL must be an HTTPS URL when production payments are enabled.")
+        elif settings.payment_provider == "kryptnet_payment_api":
+            if not settings.kryptnet_payment_webhook_secret:
+                raise RuntimeError("Set KRYPTNET_PAYMENT_WEBHOOK_SECRET before running in production.")
+        else:
+            raise RuntimeError("PAYMENT_PROVIDER must be authorize_net or kryptnet_payment_api.")
 
 
 def _client_ip(request: Request) -> str:
@@ -550,6 +573,20 @@ PUBLIC_PRICING_PLANS = [
     {"id": "business", "name": "Business", "price_usd": 49, "credits": 30, "audience": "Internal security teams"},
     {"id": "msp", "name": "MSP", "price_usd": 99, "credits": 100, "audience": "Consultants and managed service providers"},
 ]
+
+
+def _payment_provider_ready() -> bool:
+    if not settings.payment_required or settings.payment_demo_mode:
+        return False
+    if settings.payment_provider == "authorize_net":
+        return bool(
+            settings.authorize_net_api_login_id
+            and settings.authorize_net_transaction_key
+            and settings.authorize_net_signature_key
+        )
+    if settings.payment_provider == "kryptnet_payment_api":
+        return bool(settings.kryptnet_payment_api_url and settings.kryptnet_payment_webhook_secret)
+    return False
 
 
 def _require_owner_or_analyst(user: Row) -> None:
@@ -1442,12 +1479,8 @@ def public_pricing() -> dict:
     return {
         "plans": PUBLIC_PRICING_PLANS,
         "services": [{"id": key, **value} for key, value in CREDIT_CATALOG.items()],
-        "payment_available": bool(
-            settings.payment_required
-            and not settings.payment_demo_mode
-            and settings.kryptnet_payment_api_url
-            and settings.kryptnet_payment_webhook_secret
-        ),
+        "payment_available": _payment_provider_ready(),
+        "payment_provider": settings.payment_provider if _payment_provider_ready() else None,
         "currency": "USD",
     }
 
@@ -2322,6 +2355,17 @@ def create_payment_intent(
     _require_owner(user)
     _require_completed_registration(user)
     plan = _plan_details(payload.plan)
+    if settings.payment_provider == "authorize_net":
+        return {
+            "provider": "authorize_net",
+            "plan": plan,
+            "accepted_methods": ["credit_card"],
+            "client_reference": f"ks{secrets.token_hex(9)}",
+            "checkout_url": None,
+            "note": "Authorize.Net Accept Hosted securely collects card details outside KryptScan.",
+        }
+    if settings.payment_provider != "kryptnet_payment_api":
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Payment provider is not configured.")
     return {
         "provider": "kryptnet_payment_api",
         "plan": plan,
@@ -2344,6 +2388,90 @@ def create_payment_checkout(
     _require_owner(user)
     _require_completed_registration(user)
     plan = _plan_details(payload.plan)
+    provider_reference = f"ks{secrets.token_hex(9)}"
+    if settings.payment_provider == "authorize_net":
+        home_url = f"{settings.public_base_url}/" if settings.public_base_url else str(request.url_for("index"))
+        return_url = f"{home_url}?{urlencode({'payment': 'complete', 'reference': provider_reference})}"
+        cancel_url = f"{home_url}?{urlencode({'payment': 'cancelled', 'reference': provider_reference})}"
+        try:
+            hosted_checkout = create_hosted_payment_token(
+                api_login_id=settings.authorize_net_api_login_id,
+                transaction_key=settings.authorize_net_transaction_key,
+                environment=settings.authorize_net_environment,
+                reference=provider_reference,
+                amount_cents=plan["amount_cents"],
+                currency=plan["currency"],
+                email=user["email"],
+                description=f"KryptScan {plan['name']} credit pack ({plan['credits']} credits)",
+                return_url=return_url,
+                cancel_url=cancel_url,
+                timeout_seconds=settings.authorize_net_timeout_seconds,
+            )
+        except AuthorizeNetError as exc:
+            logger.warning("Authorize.Net checkout initialization failed: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="The secure payment page is temporarily unavailable. Please try again shortly.",
+            ) from exc
+
+        now = utcnow().isoformat()
+        with get_connection() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO payments (
+                    organization_id, provider, plan, amount_cents, currency,
+                    payment_method, status, provider_reference, payer_name,
+                    payer_email, safe_details_json, created_by, created_at
+                )
+                VALUES (?, 'authorize_net', ?, ?, ?, 'accept_hosted', 'checkout_created', ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user["organization_id"],
+                    plan["id"],
+                    plan["amount_cents"],
+                    plan["currency"],
+                    provider_reference,
+                    user["organization_name"],
+                    user["email"],
+                    json.dumps(
+                        {
+                            "payment_type": "credit_pack",
+                            "credits": plan["credits"],
+                            "environment": settings.authorize_net_environment,
+                            "hosted_form_url": hosted_checkout["hosted_form_url"],
+                        }
+                    ),
+                    user["id"],
+                    now,
+                ),
+            )
+            _audit(
+                connection,
+                user,
+                "payment.checkout_created",
+                {
+                    "payment_id": cursor.lastrowid,
+                    "provider": "authorize_net",
+                    "plan": plan["id"],
+                    "amount_cents": plan["amount_cents"],
+                    "provider_reference": provider_reference,
+                    "payment_type": "credit_pack",
+                    "credits": plan["credits"],
+                },
+            )
+        return {
+            "provider": "authorize_net",
+            "plan": plan,
+            "status": "checkout_created",
+            "payment_access_status": "pending_payment",
+            "checkout_url": hosted_checkout["hosted_form_url"],
+            "checkout_token": hosted_checkout["token"],
+            "provider_reference": provider_reference,
+            "message": "Authorize.Net secure checkout prepared. Credits activate after verified payment confirmation.",
+        }
+
+    if settings.payment_provider != "kryptnet_payment_api":
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Payment provider is not configured.")
     provider_reference = f"kryptnet_{secrets.token_hex(12)}"
     checkout_url = f"{plan['payment_url']}?{urlencode({
         'reference': provider_reference,
@@ -2436,10 +2564,140 @@ def create_payment_checkout(
     }
 
 
+@app.post("/api/payments/webhook/authorize-net")
+async def authorize_net_payment_webhook(request: Request) -> dict:
+    _rate_limit(request, "payments.authorize_net_webhook", limit=120, window_seconds=60)
+    if not settings.payment_required or settings.payment_provider != "authorize_net":
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Authorize.Net payments are disabled.")
+    raw_body = await request.body()
+    if not verify_webhook_signature(
+        raw_body,
+        request.headers.get("x-anet-signature", ""),
+        settings.authorize_net_signature_key,
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Authorize.Net webhook signature.")
+    try:
+        event = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Authorize.Net webhook body.") from exc
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Authorize.Net webhook event.")
+    event_type = str(event.get("eventType") or "").strip()
+    if event_type != "net.authorize.payment.authcapture.created":
+        return {"status": "ignored", "event_type": event_type}
+    event_payload = event.get("payload") or {}
+    provider_reference = str(event_payload.get("merchantReferenceId") or "").strip()
+    transaction_id = str(event_payload.get("id") or "").strip()
+    if not provider_reference or not transaction_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Authorize.Net payment identifiers are missing.")
+
+    with get_connection() as connection:
+        payment = connection.execute(
+            "SELECT * FROM payments WHERE provider = 'authorize_net' AND provider_reference = ?",
+            (provider_reference,),
+        ).fetchone()
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Authorize.Net payment reference not found.")
+    plan = _plan_details(payment["plan"])
+    try:
+        transaction_response = get_transaction_details(
+            api_login_id=settings.authorize_net_api_login_id,
+            transaction_key=settings.authorize_net_transaction_key,
+            environment=settings.authorize_net_environment,
+            transaction_id=transaction_id,
+            timeout_seconds=settings.authorize_net_timeout_seconds,
+        )
+        verified = validate_paid_transaction(
+            transaction_response,
+            expected_reference=payment["provider_reference"],
+            expected_amount_cents=int(payment["amount_cents"]),
+            expected_currency=payment["currency"],
+        )
+        if not hmac.compare_digest(verified["transaction_id"], transaction_id):
+            raise AuthorizeNetError("Authorize.Net transaction ID did not match the webhook event.")
+    except AuthorizeNetError as exc:
+        logger.warning("Authorize.Net transaction verification failed for %s: %s", provider_reference, exc)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Authorize.Net transaction verification failed.") from exc
+
+    now = utcnow().isoformat()
+    with get_connection() as connection:
+        payment = connection.execute(
+            "SELECT * FROM payments WHERE provider = 'authorize_net' AND provider_reference = ?",
+            (provider_reference,),
+        ).fetchone()
+        if payment is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Authorize.Net payment reference not found.")
+        stored_details = json.loads(payment["safe_details_json"] or "{}")
+        stored_details.update(
+            {
+                "authorize_net_transaction_id": transaction_id,
+                "authorize_net_transaction_status": verified["transaction_status"],
+                "webhook_notification_id": event.get("notificationId"),
+                "webhook_received_at": now,
+            }
+        )
+        paid_claim = connection.execute(
+            "UPDATE payments SET status = 'paid', safe_details_json = ? WHERE id = ? AND status != 'paid'",
+            (json.dumps(stored_details), payment["id"]),
+        )
+        newly_paid = paid_claim.rowcount == 1
+        if not newly_paid:
+            connection.execute(
+                "UPDATE payments SET safe_details_json = ? WHERE id = ?",
+                (json.dumps(stored_details), payment["id"]),
+            )
+        if newly_paid:
+            expires_at = (utcnow() + timedelta(days=plan["access_days"])).isoformat()
+            connection.execute(
+                "UPDATE entitlements SET status = 'expired' WHERE organization_id = ?",
+                (payment["organization_id"],),
+            )
+            connection.execute(
+                """
+                INSERT INTO entitlements (organization_id, plan, status, expires_at, created_at)
+                VALUES (?, ?, 'active', ?, ?)
+                """,
+                (payment["organization_id"], plan["id"], expires_at, now),
+            )
+        payment = connection.execute("SELECT * FROM payments WHERE id = ?", (payment["id"],)).fetchone()
+        try:
+            credit_result = grant_payment_credits(connection, payment=payment, credits=int(plan["credits"]))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        connection.execute(
+            """
+            INSERT INTO audit_events (organization_id, actor_id, action, details_json, created_at)
+            VALUES (?, NULL, 'payment.webhook_received', ?, ?)
+            """,
+            (
+                payment["organization_id"],
+                json.dumps(
+                    {
+                        "payment_id": payment["id"],
+                        "provider": "authorize_net",
+                        "provider_reference": provider_reference,
+                        "transaction_id": transaction_id,
+                        "status": "paid",
+                        "credits_granted": credit_result["credits_granted"],
+                        "duplicate_delivery": credit_result["already_granted"],
+                    }
+                ),
+                now,
+            ),
+        )
+    return {
+        "status": "accepted",
+        "payment_status": "paid",
+        "payment_access_status": "active",
+        "credits_granted": credit_result["credits_granted"],
+        "duplicate_delivery": credit_result["already_granted"],
+    }
+
+
 @app.post("/api/payments/webhook/kryptnet")
 def kryptnet_payment_webhook(request: Request, payload: PaymentWebhookRequest) -> dict:
     _rate_limit(request, "payments.webhook", limit=120, window_seconds=60)
-    if not settings.payment_required:
+    if not settings.payment_required or settings.payment_provider != "kryptnet_payment_api":
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Payment is disabled for this launch phase.")
     if not settings.kryptnet_payment_webhook_secret:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Payment webhook is not configured.")

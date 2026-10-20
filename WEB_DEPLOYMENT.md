@@ -41,13 +41,18 @@ Edit `.env.scanner` and set:
 KRYPTNET_DOMAIN=kryptscan.kryptnet.org
 KRYPTNET_EMAIL=security@kryptnet.org
 APP_SECRET=<long-random-secret>
+PUBLIC_BASE_URL=https://kryptscan.kryptnet.org
 TRUSTED_HOSTS=kryptscan.kryptnet.org
 EMAIL_FROM=security@kryptnet.org
 SMTP_HOST=<smtp-host>
 SMTP_USERNAME=<smtp-user>
 SMTP_PASSWORD=<smtp-password>
-KRYPTNET_PAYMENT_API_URL=<real-kryptnet-payment-api-url>
-KRYPTNET_PAYMENT_WEBHOOK_SECRET=<real-webhook-secret>
+PAYMENT_PROVIDER=authorize_net
+AUTHORIZE_NET_ENVIRONMENT=production
+AUTHORIZE_NET_API_LOGIN_ID=<authorize-net-api-login-id>
+AUTHORIZE_NET_TRANSACTION_KEY=<authorize-net-transaction-key>
+AUTHORIZE_NET_SIGNATURE_KEY=<authorize-net-signature-key>
+PAYMENT_REQUIRED=true
 PAYMENT_DEMO_MODE=false
 OPENAI_API_KEY=<openai-api-key>
 ```
@@ -85,32 +90,19 @@ Expected health response:
 
 ## 6. Payment Webhook
 
-Configure the KryptNet Payment API to call:
+Configure Authorize.Net to send `net.authorize.payment.authcapture.created` events to:
 
 ```text
-POST https://kryptscan.kryptnet.org/api/payments/webhook/kryptnet
+POST https://kryptscan.kryptnet.org/api/payments/webhook/authorize-net
 ```
 
-Required header:
+Authorize.Net supplies and KryptScan verifies:
 
 ```text
-X-KryptNet-Webhook-Secret: <KRYPTNET_PAYMENT_WEBHOOK_SECRET>
+X-ANET-Signature: sha512=<authorize-net-generated-hmac>
 ```
 
-Expected JSON fields:
-
-```json
-{
-  "provider_reference": "kryptnet_reference_from_checkout",
-  "status": "paid",
-  "plan": "professional",
-  "amount_cents": 29900,
-  "currency": "USD",
-  "payer_email": "client@example.com"
-}
-```
-
-Paid access activates only after a verified webhook event.
+Paid credits activate only after the signature is valid and `getTransactionDetails` confirms the server-issued reference, amount, currency, transaction type, and captured status.
 
 ## 7. Live Test Checklist
 

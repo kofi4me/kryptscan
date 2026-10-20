@@ -46,7 +46,9 @@ Render will create the `kryptnet-pentest` web service.
 In Render, open the `kryptnet-pentest` service, then add these environment variables if they are not already set by the blueprint:
 
 ```env
-KRYPTNET_PAYMENT_WEBHOOK_SECRET=<real-webhook-secret>
+AUTHORIZE_NET_API_LOGIN_ID=<authorize-net-api-login-id>
+AUTHORIZE_NET_TRANSACTION_KEY=<authorize-net-transaction-key>
+AUTHORIZE_NET_SIGNATURE_KEY=<authorize-net-signature-key>
 OPENAI_API_KEY=<real-openai-api-key>
 ```
 
@@ -56,7 +58,7 @@ The Render blueprint starts with:
 APP_ENV=staging
 ```
 
-This lets us test the public web app before the payment webhook is live. After SMTP and the KryptNet payment webhook are configured, change it to:
+This lets us test the public web app before payment is live. After SMTP and the Authorize.Net sandbox flow are verified, change it to:
 
 ```env
 APP_ENV=production

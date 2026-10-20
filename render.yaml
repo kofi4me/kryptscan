@@ -21,6 +21,8 @@ services:
         generateValue: true
       - key: APP_HOST
         value: 0.0.0.0
+      - key: PUBLIC_BASE_URL
+        value: https://kryptscan.kryptnet.org
       - key: SESSION_COOKIE_NAME
         value: kryptnet_session
       - key: SESSION_COOKIE_SECURE
@@ -53,10 +55,18 @@ services:
         sync: false
       - key: SMTP_USE_TLS
         value: true
-      - key: KRYPTNET_PAYMENT_API_URL
-        value: https://payments.kryptnet.com/api
-      - key: KRYPTNET_PAYMENT_WEBHOOK_SECRET
+      - key: PAYMENT_PROVIDER
+        value: authorize_net
+      - key: AUTHORIZE_NET_ENVIRONMENT
+        value: sandbox
+      - key: AUTHORIZE_NET_API_LOGIN_ID
         sync: false
+      - key: AUTHORIZE_NET_TRANSACTION_KEY
+        sync: false
+      - key: AUTHORIZE_NET_SIGNATURE_KEY
+        sync: false
+      - key: PAYMENT_REQUIRED
+        value: false
       - key: PAYMENT_DEMO_MODE
         value: false
       - key: SCANNER_BACKEND

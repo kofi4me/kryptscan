@@ -68,7 +68,7 @@ The app now supports this production user flow:
 6. Paid assessments require sufficient purchased or promotional credits and explicit acceptance of the quoted credit charge.
 7. Paid reports are generated as PDFs and delivered to/downloaded by the verified user.
 
-## KryptNet Payment API Integration Path
+## Authorize.Net Payment Integration
 
 The dashboard includes three one-time credit-pack buttons:
 
@@ -76,16 +76,22 @@ The dashboard includes three one-time credit-pack buttons:
 - Business
 - MSP
 
-Each button creates a unique KryptNet Payment API checkout reference for debit or credit card payment. The app does not collect card numbers, CVC, routing numbers, or bank account numbers. A verified successful webhook grants 10, 30, or 100 purchased credits to the purchaser. Repeated webhook delivery is idempotent.
+Each button requests a unique Authorize.Net Accept Hosted token for credit-card payment. The app does not collect card numbers or CVC values. A verified successful webhook grants 10, 30, or 100 purchased credits to the purchaser. Repeated webhook delivery is idempotent.
 
-The hosted checkout must charge the server-issued amount and return the same reference in its callback to `/api/payments/webhook/kryptnet`. KryptScan independently validates the reference, plan, amount, and currency before granting credits. Configure:
+Configure Authorize.Net to send `net.authorize.payment.authcapture.created` events to `https://kryptscan.kryptnet.org/api/payments/webhook/authorize-net`. KryptScan validates the webhook HMAC-SHA512 signature and independently retrieves the transaction before granting credits. Configure sandbox credentials first:
 
 ```env
-KRYPTNET_PAYMENT_API_URL=https://payments.kryptnet.com/api
-KRYPTNET_PAYMENT_WEBHOOK_SECRET=replace-with-payment-webhook-secret
+PAYMENT_PROVIDER=authorize_net
+PUBLIC_BASE_URL=https://kryptscan.kryptnet.org
+AUTHORIZE_NET_ENVIRONMENT=sandbox
+AUTHORIZE_NET_API_LOGIN_ID=replace-with-sandbox-api-login-id
+AUTHORIZE_NET_TRANSACTION_KEY=replace-with-sandbox-transaction-key
+AUTHORIZE_NET_SIGNATURE_KEY=replace-with-sandbox-signature-key
 PAYMENT_REQUIRED=true
 PAYMENT_DEMO_MODE=false
 ```
+
+After sandbox checkout, callback, webhook, duplicate-delivery, and amount-mismatch tests pass, replace the credentials with live values and set `AUTHORIZE_NET_ENVIRONMENT=production`. Never commit credentials to the repository.
 
 ## Quick start
 

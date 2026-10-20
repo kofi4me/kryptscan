@@ -28,7 +28,7 @@ Deep VA adds expanded safe network and web surface mapping. Ethical Pen-Testing 
 | Business | $49 | 30 |
 | MSP | $99 | 100 |
 
-Successful verified payment webhooks add the selected pack to the purchaser's purchased-credit balance. Webhook retries are idempotent and cannot add the same purchase twice.
+Authorize.Net Accept Hosted securely collects card details. Successful signed webhooks are independently verified through Authorize.Net transaction reporting before the selected pack is added to the purchaser's balance. Webhook retries are idempotent and cannot add the same purchase twice.
 
 ## Credit Lifecycle
 
