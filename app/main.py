@@ -508,7 +508,7 @@ def _serialize_entitlement(entitlement: Row | None) -> dict:
 PLAN_CATALOG = {
     "professional": {
         "name": "Professional",
-        "amount_cents": 2900,
+        "amount_cents": 1900,
         "currency": "USD",
         "credits": 10,
         "access_days": 365,
@@ -517,7 +517,7 @@ PLAN_CATALOG = {
     },
     "business": {
         "name": "Business",
-        "amount_cents": 6900,
+        "amount_cents": 4900,
         "currency": "USD",
         "credits": 30,
         "access_days": 365,
@@ -546,8 +546,8 @@ def _plan_details(plan: str) -> dict:
 
 
 PUBLIC_PRICING_PLANS = [
-    {"id": "professional", "name": "Professional", "price_usd": 29, "credits": 10, "audience": "IT professionals and small businesses"},
-    {"id": "business", "name": "Business", "price_usd": 69, "credits": 30, "audience": "Internal security teams"},
+    {"id": "professional", "name": "Professional", "price_usd": 19, "credits": 10, "audience": "IT professionals and small businesses"},
+    {"id": "business", "name": "Business", "price_usd": 49, "credits": 30, "audience": "Internal security teams"},
     {"id": "msp", "name": "MSP", "price_usd": 99, "credits": 100, "audience": "Consultants and managed service providers"},
 ]
 

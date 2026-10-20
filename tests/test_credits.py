@@ -139,7 +139,7 @@ class CreditLedgerTests(unittest.TestCase):
                 payment_method, status, provider_reference, payer_name,
                 payer_email, safe_details_json, created_by, created_at
             ) VALUES (
-                1, 'kryptnet_payment_api', 'professional', 2900, 'USD',
+                1, 'kryptnet_payment_api', 'professional', 1900, 'USD',
                 'debit_credit_checkout', 'paid', 'payment-reference-001',
                 'Example', 'tester@example.com', '{}', 1, '2026-09-30T12:00:00+00:00'
             )

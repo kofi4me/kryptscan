@@ -24,8 +24,8 @@ Deep VA adds expanded safe network and web surface mapping. Ethical Pen-Testing 
 
 | Plan | One-time price | Included credits |
 | --- | ---: | ---: |
-| Professional | $29 | 10 |
-| Business | $69 | 30 |
+| Professional | $19 | 10 |
+| Business | $49 | 30 |
 | MSP | $99 | 100 |
 
 Successful verified payment webhooks add the selected pack to the purchaser's purchased-credit balance. Webhook retries are idempotent and cannot add the same purchase twice.
