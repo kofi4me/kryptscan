@@ -503,6 +503,29 @@ def _clean_optional(value: str | None) -> str:
     return value.strip() if value else ""
 
 
+def _pentest_engagement_details(payload: ScanCreateRequest, depth: str) -> dict[str, str]:
+    details = {
+        "pentest_scope": _clean_optional(payload.pentest_scope),
+        "testing_window": _clean_optional(payload.testing_window),
+        "out_of_scope": _clean_optional(payload.out_of_scope),
+        "emergency_stop": _clean_optional(payload.emergency_stop),
+    }
+    if depth == "deep":
+        labels = {
+            "pentest_scope": "approved testing scope",
+            "testing_window": "approved testing window",
+            "out_of_scope": "out-of-scope systems or actions",
+            "emergency_stop": "emergency stop contact and instructions",
+        }
+        missing = [labels[key] for key, value in details.items() if not value]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Deep validation requires: {', '.join(missing)}.",
+            )
+    return details
+
+
 def _active_entitlement(connection, organization_id: int) -> Row | None:
     return connection.execute(
         """
@@ -925,9 +948,16 @@ def _enrich_report_for_scan(
         depth_label = (testing_context.get("pentest_depth") or "standard").replace("_", " ").title()
         validation_label = (testing_context.get("validation_mode") or "safe_validation").replace("_", " ").title()
         focus_label = testing_context.get("vulnerability_focus") or "web, API, network, TLS, identity, cloud, code, and secrets"
+        approved_scope = (
+            engagement["scope_notes"]
+            if engagement
+            else testing_context.get("pentest_scope") or "approved target and submitted rules of engagement"
+        )
+        testing_window = engagement["testing_window"] if engagement else testing_context.get("testing_window")
+        testing_window_text = f" Testing window: {testing_window}." if testing_window else ""
         scope_summary = (
             f"Ethical Pen-Testing engagement for {scan['normalized_target']}. "
-            f"Scope: {engagement['scope_notes'] if engagement else 'approved target and submitted rules of engagement'}. "
+            f"Scope: {approved_scope}.{testing_window_text} "
             f"Depth: {depth_label}. Validation mode: {validation_label}. "
             f"Focus areas: {focus_label}. "
             f"Authorization: {engagement['authorization_reference'] if engagement else scan['authorization_method']}."
@@ -1561,6 +1591,11 @@ def quote_scan(
     service_level = payload.service_level.strip().lower()
     if service_level not in {"standard", "deep"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Service level must be standard or deep.")
+    if assessment_mode == "ethical_pentesting":
+        pentest_depth = payload.pentest_depth.strip().lower()
+        if pentest_depth not in {"standard", "deep"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Testing depth must be standard or deep.")
+        service_level = pentest_depth
     target = payload.target.strip()
     if not target:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enter a target before requesting a scan estimate.")
@@ -3113,6 +3148,12 @@ def create_scan(
     service_level = payload.service_level.strip().lower()
     if service_level not in {"standard", "deep"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Service level must be standard or deep.")
+    depth = "standard"
+    if assessment_mode == "ethical_pentesting":
+        depth = payload.pentest_depth.strip().lower()
+        if depth not in {"standard", "deep"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Testing depth must be standard or deep.")
+        service_level = depth
     if not payload.quote_token or not payload.credit_charge_accepted:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -3140,13 +3181,12 @@ def create_scan(
 
     now = utcnow().isoformat()
     scan_protocols = build_scan_protocols(asset_type, authorization["target_kind"], assessment_mode)
+    pentest_engagement: dict[str, str] = {}
     if assessment_mode == "ethical_pentesting":
-        depth = payload.pentest_depth.strip().lower()
-        if depth not in {"standard", "deep"}:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Testing depth must be standard or deep.")
         validation_mode = payload.validation_mode.strip().lower()
         if validation_mode not in {"safe_validation", "evidence_only"}:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Validation mode must be safe_validation or evidence_only.")
+        pentest_engagement = _pentest_engagement_details(payload, depth)
         focus = [item.strip().lower() for item in payload.vulnerability_focus if item.strip()]
         if not focus:
             focus = ["web", "api", "network", "tls", "identity", "cloud", "code", "secrets"]
@@ -3165,6 +3205,10 @@ def create_scan(
                 "Rules of engagement: no destructive testing, no brute force, no persistence, and no data exfiltration",
             ]
         )
+        if pentest_engagement["pentest_scope"]:
+            scan_protocols.append(f"Approved testing scope: {pentest_engagement['pentest_scope']}")
+        if pentest_engagement["testing_window"]:
+            scan_protocols.append(f"Approved testing window: {pentest_engagement['testing_window']}")
         if payload.known_vulnerabilities:
             scan_protocols.append(f"Known vulnerabilities to validate: {payload.known_vulnerabilities.strip()}")
         api_base_url = _clean_optional(payload.api_base_url)
@@ -3192,12 +3236,12 @@ def create_scan(
             scan_protocols.append(account_line)
         if payload.access_notes:
             scan_protocols.append(f"Access notes: {payload.access_notes.strip()}")
-        if payload.out_of_scope:
-            scan_protocols.append(f"Out-of-scope boundaries: {payload.out_of_scope.strip()}")
+        if pentest_engagement["out_of_scope"]:
+            scan_protocols.append(f"Out-of-scope boundaries: {pentest_engagement['out_of_scope']}")
         if payload.critical_workflows:
             scan_protocols.append(f"Business-critical workflows to review: {payload.critical_workflows.strip()}")
-        if payload.emergency_stop:
-            scan_protocols.append(f"Emergency stop instruction: {payload.emergency_stop.strip()}")
+        if pentest_engagement["emergency_stop"]:
+            scan_protocols.append(f"Emergency stop instruction: {pentest_engagement['emergency_stop']}")
 
     report_company_name = _clean_optional(payload.report_company_name)
     report_company_address = _clean_optional(payload.report_company_address)
@@ -3224,8 +3268,10 @@ def create_scan(
     if assessment_mode == "ethical_pentesting":
         scanner_context = {
             "service_level": service_level,
-            "pentest_depth": payload.pentest_depth.strip().lower(),
+            "pentest_depth": depth,
             "validation_mode": payload.validation_mode.strip().lower(),
+            "pentest_scope": pentest_engagement["pentest_scope"],
+            "testing_window": pentest_engagement["testing_window"],
             "vulnerability_focus": ", ".join(focus),
             "known_vulnerabilities": _clean_optional(payload.known_vulnerabilities),
             "api_base_url": _clean_optional(payload.api_base_url),
@@ -3233,9 +3279,9 @@ def create_scan(
             "test_account_username": _clean_optional(payload.test_account_username),
             "test_account_role": _clean_optional(payload.test_account_role),
             "access_notes": _clean_optional(payload.access_notes),
-            "out_of_scope": _clean_optional(payload.out_of_scope),
+            "out_of_scope": pentest_engagement["out_of_scope"],
             "critical_workflows": _clean_optional(payload.critical_workflows),
-            "emergency_stop": _clean_optional(payload.emergency_stop),
+            "emergency_stop": pentest_engagement["emergency_stop"],
         }
     if report_intake_requested and not payload.engagement_id:
         missing_report_fields = [

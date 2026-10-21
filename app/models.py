@@ -77,6 +77,8 @@ class ScanCreateRequest(BaseModel):
     report_testing_window: str | None = Field(default=None, max_length=160)
     report_emergency_contact: str | None = Field(default=None, max_length=160)
     pentest_depth: str = Field(default="standard")
+    pentest_scope: str | None = Field(default=None, max_length=1200)
+    testing_window: str | None = Field(default=None, max_length=160)
     vulnerability_focus: list[str] = Field(default_factory=list)
     known_vulnerabilities: str | None = Field(default=None, max_length=1000)
     validation_mode: str = Field(default="safe_validation")

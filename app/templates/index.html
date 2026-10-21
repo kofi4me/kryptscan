@@ -377,7 +377,7 @@
             <input id="assessment-mode-input" type="hidden" value="vulnerability_assessment" />
             <input id="scan-tier-input" type="hidden" value="full_scan" />
             <label>
-              <span>Domain name or IP address</span>
+              <span>Target domain, IP, or API URL</span>
               <input id="target-input" type="text" placeholder="example.com or 203.0.113.10" required />
             </label>
             <label id="service-level-field">
@@ -387,6 +387,110 @@
                 <option value="deep">Deep assessment</option>
               </select>
             </label>
+            <div id="ethical-pentest-fields" class="ethical-fields hidden">
+              <div class="form-grid pentest-primary-fields">
+                <label>
+                  <span>Testing depth</span>
+                  <select id="pentest-depth-input">
+                    <option value="standard" selected>Standard validation</option>
+                    <option value="deep">Deep validation</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Validation mode</span>
+                  <select id="validation-mode-input">
+                    <option value="safe_validation" selected>Safe, non-destructive validation</option>
+                    <option value="evidence_only">Evidence-only review</option>
+                  </select>
+                </label>
+              </div>
+
+              <details id="pentest-engagement-details" class="pentest-advanced">
+                <summary>
+                  <span>Advanced Engagement Details</span>
+                  <small id="pentest-engagement-requirement">Optional for standard validation</small>
+                </summary>
+                <div class="pentest-advanced-content">
+                  <div class="form-grid">
+                    <label>
+                      <span>Approved testing scope</span>
+                      <textarea
+                        id="pentest-scope-input"
+                        placeholder="Systems, applications, interfaces, and approved testing boundaries"
+                      ></textarea>
+                    </label>
+                    <label>
+                      <span>Approved testing window</span>
+                      <input id="pentest-testing-window-input" type="text" placeholder="Oct 21, 2026 09:00-17:00 UTC" />
+                    </label>
+                  </div>
+                  <label>
+                    <span>Vulnerability focus</span>
+                    <input
+                      id="vulnerability-focus-input"
+                      type="text"
+                      value="web, api, network, tls, identity, cloud, code, secrets"
+                    />
+                  </label>
+                  <label>
+                    <span>Known vulnerabilities or CVEs to validate</span>
+                    <textarea
+                      id="known-vulnerabilities-input"
+                      placeholder="Optional: CVE IDs, suspected weaknesses, exposed services, affected app paths, or previous findings"
+                    ></textarea>
+                  </label>
+                  <div class="form-grid">
+                    <label>
+                      <span>API base URL</span>
+                      <input id="api-base-url-input" type="url" placeholder="https://api.example.com" />
+                    </label>
+                    <label>
+                      <span>Test account username</span>
+                      <input id="test-account-username-input" type="text" placeholder="tester@example.com or approved user ID" />
+                    </label>
+                  </div>
+                  <div class="form-grid">
+                    <label>
+                      <span>Test account role</span>
+                      <input id="test-account-role-input" type="text" placeholder="Customer, staff, analyst, or read-only admin" />
+                    </label>
+                    <label class="check-option target-authorization-check compact-check">
+                      <input id="authenticated-testing-input" type="checkbox" />
+                      <span>Authenticated testing is approved in the rules of engagement.</span>
+                    </label>
+                  </div>
+                  <p class="inline-copy no-secret-note">Never enter passwords, API keys, tokens, or client secrets here. Exchange credentials only through an approved secure channel.</p>
+                  <label>
+                    <span>Access notes</span>
+                    <textarea
+                      id="access-notes-input"
+                      placeholder="Optional: login path, MFA constraints, VPN requirement, role limits, or account handling instructions"
+                    ></textarea>
+                  </label>
+                  <label>
+                    <span>Out-of-scope systems or actions</span>
+                    <textarea
+                      id="out-of-scope-input"
+                      placeholder="Excluded hosts, restricted paths or actions, rate limits, and prohibited testing periods"
+                    ></textarea>
+                  </label>
+                  <label>
+                    <span>Business-critical workflows</span>
+                    <textarea
+                      id="critical-workflows-input"
+                      placeholder="Optional: login, checkout, payment, customer portal, file upload, or password reset"
+                    ></textarea>
+                  </label>
+                  <label>
+                    <span>Emergency stop contact and instructions</span>
+                    <textarea
+                      id="emergency-stop-input"
+                      placeholder="Contact details and the immediate stop or rollback procedure if testing affects operations"
+                    ></textarea>
+                  </label>
+                </div>
+              </details>
+            </div>
             <label class="check-option target-authorization-check">
               <input id="target-authorization-input" type="checkbox" />
               <span>I confirm I own this target or have written authorization to perform this assessment.</span>
@@ -404,9 +508,9 @@
             </section>
             <button id="scan-submit-button" type="submit" disabled>Run Vulnerability Assessment</button>
             <div id="optional-report-actions" class="optional-report-actions">
-              <button id="report-intake-toggle-button" type="button" class="ghost">Submit Report</button>
+              <button id="report-intake-toggle-button" type="button" class="ghost">Client Report Details (Optional)</button>
               <p class="inline-copy">
-                Optional: complete this only when you want client and target owner details attached to the PDF report.
+                Add client and target-owner details only when they should appear in the downloadable report.
               </p>
             </div>
             <section id="report-intake-fields" class="report-intake hidden">
@@ -464,88 +568,6 @@
                 ></textarea>
               </label>
             </section>
-            <div id="ethical-pentest-fields" class="ethical-fields hidden">
-              <div class="form-grid">
-                <label>
-                  <span>Testing depth</span>
-                  <select id="pentest-depth-input">
-                    <option value="standard" selected>Standard validation</option>
-                    <option value="deep">Deep validation</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Safe validation mode</span>
-                  <select id="validation-mode-input">
-                    <option value="safe_validation" selected>Non-destructive vulnerability validation</option>
-                    <option value="evidence_only">Evidence-only review</option>
-                  </select>
-                </label>
-              </div>
-              <label>
-                <span>Vulnerability focus</span>
-                <input
-                  id="vulnerability-focus-input"
-                  type="text"
-                  value="web, api, network, tls, identity, cloud, code, secrets"
-                />
-              </label>
-              <label>
-                <span>Known vulnerabilities or CVEs to validate</span>
-                <textarea
-                  id="known-vulnerabilities-input"
-                  placeholder="Optional: CVE IDs, suspected weaknesses, exposed services, affected app paths, or previous scan findings"
-                ></textarea>
-              </label>
-              <div class="form-grid">
-                <label>
-                  <span>API base URL</span>
-                  <input id="api-base-url-input" type="url" placeholder="https://api.example.com" />
-                </label>
-                <label>
-                  <span>Test account username</span>
-                  <input id="test-account-username-input" type="text" placeholder="tester@example.com or client-approved user ID" />
-                </label>
-              </div>
-              <div class="form-grid">
-                <label>
-                  <span>Test account role</span>
-                  <input id="test-account-role-input" type="text" placeholder="Customer, staff, analyst, admin-readonly" />
-                </label>
-                <label class="check-option target-authorization-check compact-check">
-                  <input id="authenticated-testing-input" type="checkbox" />
-                  <span>Authenticated testing is approved in the rules of engagement.</span>
-                </label>
-              </div>
-              <p class="inline-copy no-secret-note">Do not enter passwords, API keys, tokens, or client secrets. Store credentials in an approved secure channel only.</p>
-              <label>
-                <span>Access notes</span>
-                <textarea
-                  id="access-notes-input"
-                  placeholder="Optional: login path, MFA constraints, VPN requirement, role limitations, or safe account handling instructions"
-                ></textarea>
-              </label>
-              <label>
-                <span>Out-of-scope systems or actions</span>
-                <textarea
-                  id="out-of-scope-input"
-                  placeholder="Optional: excluded hosts, no-go paths, no destructive testing, rate limits, or restricted business hours"
-                ></textarea>
-              </label>
-              <label>
-                <span>Business-critical workflows</span>
-                <textarea
-                  id="critical-workflows-input"
-                  placeholder="Optional: login, checkout, payment, customer portal, admin approval, file upload, password reset"
-                ></textarea>
-              </label>
-              <label>
-                <span>Emergency stop instructions</span>
-                <textarea
-                  id="emergency-stop-input"
-                  placeholder="Optional: who to contact and what to do if testing impacts availability or business operations"
-                ></textarea>
-              </label>
-            </div>
           </form>
 
           <section class="coupon-panel">

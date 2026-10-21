@@ -5,6 +5,7 @@ const state = {
   activeScanId: null,
   assessmentMode: "vulnerability_assessment",
   scanTier: "full_scan",
+  vulnerabilityAssessmentDepth: "standard",
   reportIntakeEnabled: false,
   refreshTimer: null,
   verificationTimer: null,
@@ -41,8 +42,22 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("password-reset-confirm-form").addEventListener("submit", handlePasswordResetConfirm);
   document.getElementById("scan-form").addEventListener("submit", handleCreateScan);
   document.getElementById("target-input").addEventListener("input", scheduleScanQuote);
-  document.getElementById("service-level-input").addEventListener("change", requestScanQuote);
-  document.getElementById("pentest-depth-input").addEventListener("change", requestScanQuote);
+  document.getElementById("service-level-input").addEventListener("change", (event) => {
+    state.vulnerabilityAssessmentDepth = event.target.value;
+    requestScanQuote();
+  });
+  document.getElementById("pentest-depth-input").addEventListener("change", () => {
+    updatePentestEngagementRequirements();
+    requestScanQuote();
+  });
+  [
+    "pentest-scope-input",
+    "pentest-testing-window-input",
+    "out-of-scope-input",
+    "emergency-stop-input",
+  ].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", updateScanActionState);
+  });
   document.getElementById("target-authorization-input").addEventListener("change", updateScanActionState);
   document.getElementById("credit-charge-accepted-input").addEventListener("change", updateScanActionState);
   document.getElementById("coupon-form").addEventListener("submit", handleCouponRedemption);
@@ -322,11 +337,17 @@ function selectAssessmentMode(mode) {
   if (ethicalFields) {
     ethicalFields.classList.toggle("hidden", clientOnly || mode !== "ethical_pentesting");
   }
+  const serviceLevelField = document.getElementById("service-level-field");
+  const serviceLevelInput = document.getElementById("service-level-input");
+  serviceLevelField?.classList.toggle("hidden", mode === "ethical_pentesting");
   if (mode === "ethical_pentesting") {
+    serviceLevelInput.value = document.getElementById("pentest-depth-input")?.value || "standard";
     selectScanTier("full_scan", { silent: true });
   } else {
+    serviceLevelInput.value = state.vulnerabilityAssessmentDepth;
     selectScanTier("full_scan", { silent: true });
   }
+  updatePentestEngagementRequirements();
   updateReportIntakeVisibility();
   updateScanSubmitText();
   const subtitle = document.getElementById("dashboard-subtitle");
@@ -373,7 +394,9 @@ function updateReportIntakeVisibility() {
   });
   const toggle = document.getElementById("report-intake-toggle-button");
   if (toggle) {
-    toggle.textContent = state.reportIntakeEnabled ? "Hide Report Details" : "Submit Report";
+    toggle.textContent = state.reportIntakeEnabled
+      ? "Hide Client Report Details"
+      : "Client Report Details (Optional)";
     toggle.classList.toggle("active", state.reportIntakeEnabled);
   }
 }
@@ -381,6 +404,47 @@ function updateReportIntakeVisibility() {
 function toggleReportIntake() {
   state.reportIntakeEnabled = !state.reportIntakeEnabled;
   updateReportIntakeVisibility();
+}
+
+function deepPentestEngagementReady() {
+  if (state.assessmentMode !== "ethical_pentesting") return true;
+  if (document.getElementById("pentest-depth-input")?.value !== "deep") return true;
+  return [
+    "pentest-scope-input",
+    "pentest-testing-window-input",
+    "out-of-scope-input",
+    "emergency-stop-input",
+  ].every((id) => Boolean(document.getElementById(id)?.value.trim()));
+}
+
+function updatePentestEngagementRequirements() {
+  const depth = document.getElementById("pentest-depth-input")?.value || "standard";
+  const deep = state.assessmentMode === "ethical_pentesting" && depth === "deep";
+  const details = document.getElementById("pentest-engagement-details");
+  const note = document.getElementById("pentest-engagement-requirement");
+  const serviceLevel = document.getElementById("service-level-input");
+  if (state.assessmentMode === "ethical_pentesting" && serviceLevel) {
+    serviceLevel.value = depth;
+  }
+  [
+    "pentest-scope-input",
+    "pentest-testing-window-input",
+    "out-of-scope-input",
+    "emergency-stop-input",
+  ].forEach((id) => {
+    const field = document.getElementById(id);
+    if (field) field.required = deep;
+  });
+  if (details) {
+    details.classList.toggle("required", deep);
+    if (deep) details.open = true;
+  }
+  if (note) {
+    note.textContent = deep
+      ? "Required for deep validation"
+      : "Optional for standard validation";
+  }
+  updateScanActionState();
 }
 
 function updateScanSubmitText() {
@@ -420,6 +484,7 @@ async function requestScanQuote() {
   }
   const assessmentMode = document.getElementById("assessment-mode-input").value;
   const serviceLevel = document.getElementById("service-level-input").value;
+  const pentestDepth = document.getElementById("pentest-depth-input")?.value || "standard";
   clearScanQuote("Calculating the required credits...");
   const requestId = ++state.quoteRequestId;
   const { response, payload } = await fetchJson("/api/scan-quotes", {
@@ -428,14 +493,15 @@ async function requestScanQuote() {
       target,
       assessment_mode: assessmentMode,
       service_level: serviceLevel,
-      pentest_depth: document.getElementById("pentest-depth-input")?.value || "standard",
+      pentest_depth: pentestDepth,
     }),
   });
   if (
     requestId !== state.quoteRequestId ||
     target !== document.getElementById("target-input").value.trim() ||
     assessmentMode !== document.getElementById("assessment-mode-input").value ||
-    serviceLevel !== document.getElementById("service-level-input").value
+    serviceLevel !== document.getElementById("service-level-input").value ||
+    pentestDepth !== (document.getElementById("pentest-depth-input")?.value || "standard")
   ) return;
   if (!response.ok) {
     clearScanQuote(formatApiError(payload, "Unable to calculate the scan cost."));
@@ -469,7 +535,12 @@ function updateScanActionState() {
   if (!submit) return;
   const authorized = Boolean(document.getElementById("target-authorization-input")?.checked);
   const accepted = Boolean(document.getElementById("credit-charge-accepted-input")?.checked);
-  submit.disabled = !(state.scanQuote?.sufficient_credits && authorized && accepted);
+  submit.disabled = !(
+    state.scanQuote?.sufficient_credits &&
+    authorized &&
+    accepted &&
+    deepPentestEngagementReady()
+  );
 }
 
 async function handleCouponRedemption(event) {
@@ -831,6 +902,17 @@ async function handleCreateScan(event) {
     setButtonBusy("scan-submit-button", false);
     return;
   }
+  if (!deepPentestEngagementReady()) {
+    document.getElementById("pentest-engagement-details").open = true;
+    setStatus(
+      "dashboard-status",
+      "Complete the approved scope, testing window, exclusions, and emergency-stop details before launching deep validation.",
+      "error"
+    );
+    setButtonBusy("scan-submit-button", false);
+    updateScanActionState();
+    return;
+  }
   const body = {
     target,
     assessment_mode,
@@ -853,6 +935,8 @@ async function handleCreateScan(event) {
   if (assessment_mode === "ethical_pentesting") {
     body.pentest_depth = document.getElementById("pentest-depth-input").value;
     body.validation_mode = document.getElementById("validation-mode-input").value;
+    body.pentest_scope = document.getElementById("pentest-scope-input").value.trim() || null;
+    body.testing_window = document.getElementById("pentest-testing-window-input").value.trim() || null;
     body.vulnerability_focus = document
       .getElementById("vulnerability-focus-input")
       .value.split(",")
