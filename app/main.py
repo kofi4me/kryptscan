@@ -46,7 +46,6 @@ from app.models import (
     LoginRequest,
     PasswordResetConfirmRequest,
     PasswordResetRequest,
-    PaymentSummary,
     PaymentWebhookRequest,
     RegistrationRequest,
     RegistrationProfileRequest,
@@ -406,22 +405,6 @@ def _serialize_member(row: Row) -> MemberSummary:
         role=row["role"],
         full_name=row["full_name"],
         is_verified=bool(row["is_verified"]),
-        created_at=row["created_at"],
-    )
-
-
-def _serialize_payment(row: Row) -> PaymentSummary:
-    return PaymentSummary(
-        id=row["id"],
-        provider=row["provider"],
-        plan=row["plan"],
-        amount_cents=row["amount_cents"],
-        currency=row["currency"],
-        payment_method=row["payment_method"],
-        status=row["status"],
-        provider_reference=row["provider_reference"],
-        payer_email=row["payer_email"],
-        safe_details=json.loads(row["safe_details_json"] or "{}"),
         created_at=row["created_at"],
     )
 
@@ -2164,17 +2147,6 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
             (user["organization_id"], user["id"]),
         ).fetchall()
 
-        payments = connection.execute(
-            """
-            SELECT *
-            FROM payments
-            WHERE organization_id = ? AND created_by = ?
-            ORDER BY id DESC
-            LIMIT 10
-            """,
-            (user["organization_id"], user["id"]),
-        ).fetchall()
-
         target_count = connection.execute(
             "SELECT COUNT(*) AS count FROM targets WHERE organization_id = ? AND created_by = ?",
             (user["organization_id"], user["id"]),
@@ -2212,7 +2184,6 @@ def dashboard(user: Row = Depends(get_current_user)) -> DashboardResponse:
         profiles=get_assessment_profiles(),
         engagements=[_serialize_engagement(row) for row in engagements],
         members=[],
-        payments=[_serialize_payment(row) for row in payments],
         manual_findings=[_serialize_manual_finding(row) for row in manual_findings],
         audit_events=[_serialize_audit_event(row) for row in audit_events],
         scans=scan_summaries,

@@ -358,7 +358,6 @@ function selectAssessmentMode(mode) {
         : `${state.dashboard.user.email} verified for ${state.dashboard.organization.domain}. Run a full vulnerability assessment for an authorized asset and receive a PDF report.`;
   }
   if (state.dashboard) {
-    renderCommercialReadiness(state.dashboard);
     requestScanQuote();
   }
 }
@@ -369,7 +368,7 @@ function selectScanTier(tier, options = {}) {
   updateReportIntakeVisibility();
   updateScanSubmitText();
   if (!options.silent && state.dashboard) {
-    renderCommercialReadiness(state.dashboard);
+    updateScanActionState();
   }
 }
 
@@ -1036,7 +1035,6 @@ async function loadDashboard(showStatus = false, options = {}) {
   state.dashboard = payload;
   updateAuthNav(true);
   renderDashboard(payload);
-  renderScannerHealthSummary();
   if (payload.user?.role === "client_viewer") {
     showDashboardPage();
     await loadClientPortal();
@@ -1072,13 +1070,6 @@ function scheduleDashboardRefresh(payload) {
   if (hasActiveScan) {
     state.refreshTimer = window.setTimeout(() => loadDashboard(false), 5000);
   }
-}
-
-async function loadScannerHealth() {
-  const response = await fetch("/api/scanner-health");
-  if (!response.ok) return;
-  const payload = await response.json();
-  renderScannerHealth(payload);
 }
 
 async function loadClientPortal() {
@@ -1165,9 +1156,6 @@ function renderDashboard(payload) {
   document.getElementById("manual-finding-form").classList.toggle("hidden", clientOnly || !state.activeScanId);
   document.getElementById("client-portal-panel").classList.toggle("hidden", !clientOnly);
   selectAssessmentMode(state.assessmentMode);
-  renderCommercialReadiness(payload);
-  renderMembers([]);
-  renderPayments(payload.payments || []);
   updateScanActionState();
 
   const statsGrid = document.getElementById("stats-grid");
@@ -1245,56 +1233,6 @@ function renderDashboard(payload) {
     .join("");
 }
 
-function renderScannerHealth(payload) {
-  const element = document.getElementById("scanner-health-grid");
-  if (!element) return;
-  const tools = payload.tools || [];
-  const sourceText = payload.worker_connected
-    ? "Worker scanner connected. Availability is read from the scanner server."
-    : "Scanner worker is not reachable from the web app. Restart or rebuild the worker before production scans.";
-  element.innerHTML = `
-    <article class="tool-card scanner-health-card">
-      <strong>Scanner Health</strong>
-      <div class="meta-line">
-        <span>${payload.available ?? 0} available</span>
-        <span>${payload.missing ?? 0} missing</span>
-        <span>${payload.optional_pending ?? 0} setup needed</span>
-      </div>
-      <p>${escapeHtml(sourceText)}</p>
-    </article>
-    ${tools
-      .map(
-        (tool) => {
-          const statusLabel = tool.available ? "available" : tool.optional ? "setup needed" : "missing";
-          const statusClass = tool.available ? "completed" : tool.optional ? "setup-needed" : "warn";
-          return `
-          <article class="tool-card">
-            <strong>${escapeHtml(tool.name)}</strong>
-            <div class="meta-line">
-              <span>${escapeHtml(tool.category)}</span>
-              <span class="pill ${statusClass}">${statusLabel}</span>
-            </div>
-            <p>${escapeHtml(tool.resolved_path || tool.configured_path || "Not configured")}</p>
-          </article>
-        `;
-        }
-      )
-      .join("")}
-  `;
-}
-
-function renderScannerHealthSummary() {
-  const element = document.getElementById("scanner-health-grid");
-  if (!element) return;
-  element.innerHTML = `
-    <article class="readiness-card scanner-summary-card">
-      <strong>Scanner Ready</strong>
-      <span class="pill completed">Connected</span>
-      <p>KryptScan uses a managed scanner worker to run the approved assessment workflow. Technical tool details are monitored by KryptNet administrators.</p>
-    </article>
-  `;
-}
-
 function stageLabel(percent, status) {
   const value = Number(percent || 0);
   if (status === "completed") return "Report complete";
@@ -1307,24 +1245,6 @@ function stageLabel(percent, status) {
   if (value < 82) return "Vulnerability correlation";
   if (value < 92) return "AI triage and prioritization";
   return "Report generation";
-}
-
-function renderMembers(members) {
-  const element = document.getElementById("member-list");
-  if (!element) return;
-  element.innerHTML = members.length
-    ? members
-        .map(
-          (member) => `
-            <article class="readiness-card">
-              <strong>${escapeHtml(member.email)}</strong>
-              <span class="pill completed">${escapeHtml(member.role)}</span>
-              <p>${escapeHtml(member.full_name || "No display name")} - ${member.is_verified ? "verified" : "pending"}</p>
-            </article>
-          `
-        )
-        .join("")
-    : "";
 }
 
 function renderClientPortal(payload) {
@@ -1370,46 +1290,6 @@ function renderClientPortal(payload) {
         )
         .join("")
     : `<div class="check-card">No remediation items yet.</div>`;
-}
-
-function renderCommercialReadiness(payload) {
-  const element = document.getElementById("commercial-readiness");
-  if (!element || !payload) return;
-  if (!payload.stats?.payment_required) {
-    element.innerHTML = "";
-    return;
-  }
-  const paymentActive = (payload.stats?.credit_balance?.purchased ?? 0) > 0;
-  element.innerHTML = `
-    <article class="readiness-card">
-      <strong>Payment</strong>
-      <span class="pill ${paymentActive ? "completed" : "warn"}">${paymentActive ? "paid" : "required"}</span>
-      <p>${
-        paymentActive
-            ? `${payload.stats.credit_balance.purchased} purchased credits are available.`
-            : "Purchase credits before launching paid vulnerability assessments or ethical pen-testing."
-      }</p>
-      ${paymentActive ? "" : `<p>Card details stay inside the hosted checkout and are not stored by KryptScan.</p>`}
-    </article>
-  `;
-}
-
-function renderPayments(payments) {
-  const element = document.getElementById("payment-list");
-  if (!element) return;
-  element.innerHTML = payments.length
-    ? payments
-        .map(
-          (payment) => `
-            <article class="readiness-card">
-              <strong>${escapeHtml(payment.plan)} - ${(payment.amount_cents / 100).toLocaleString(undefined, { style: "currency", currency: payment.currency })}</strong>
-              <span class="pill completed">${escapeHtml(payment.status)}</span>
-              <p>${escapeHtml(payment.payment_method)} - ${escapeHtml(payment.provider_reference)}</p>
-            </article>
-          `
-        )
-        .join("")
-    : "";
 }
 
 function renderReport(report) {

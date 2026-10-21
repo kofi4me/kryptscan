@@ -318,7 +318,6 @@ class DashboardResponse(BaseModel):
     profiles: list[dict[str, Any]] = Field(default_factory=list)
     engagements: list[EngagementSummary] = Field(default_factory=list)
     members: list[MemberSummary] = Field(default_factory=list)
-    payments: list[PaymentSummary] = Field(default_factory=list)
     manual_findings: list[ManualFindingSummary] = Field(default_factory=list)
     audit_events: list[AuditEventSummary] = Field(default_factory=list)
     scans: list[ScanSummary]
