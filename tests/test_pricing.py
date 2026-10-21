@@ -10,7 +10,10 @@ from starlette.requests import Request
 from app.main import (
     PLAN_CATALOG,
     PUBLIC_PRICING_PLANS,
+    _authorize_net_callback_urls,
     _public_page,
+    authorize_net_payment_cancel,
+    authorize_net_payment_complete,
     create_payment_intent,
 )
 from app.models import PaymentIntentRequest
@@ -114,6 +117,24 @@ class PricingCatalogTests(unittest.TestCase):
 
                 self.assertEqual(result["provider"], "authorize_net")
                 self.assertEqual(result["plan"]["credits"], 20)
+
+    def test_authorize_net_callbacks_use_clean_paths(self) -> None:
+        complete = authorize_net_payment_complete()
+        cancel = authorize_net_payment_cancel()
+
+        self.assertEqual(complete.status_code, 303)
+        self.assertEqual(complete.headers["location"], "/?payment=complete")
+        self.assertEqual(cancel.status_code, 303)
+        self.assertEqual(cancel.headers["location"], "/?payment=cancelled")
+
+        callback_settings = SimpleNamespace(public_base_url="https://kryptscan.kryptnet.org")
+        with patch("app.main.settings", callback_settings):
+            return_url, cancel_url = _authorize_net_callback_urls(self._request())
+
+        self.assertEqual(return_url, "https://kryptscan.kryptnet.org/payments/authorize-net/complete")
+        self.assertEqual(cancel_url, "https://kryptscan.kryptnet.org/payments/authorize-net/cancel")
+        self.assertNotIn("?", return_url)
+        self.assertNotIn("?", cancel_url)
 
 
 if __name__ == "__main__":

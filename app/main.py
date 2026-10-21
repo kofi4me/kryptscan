@@ -17,7 +17,7 @@ from sqlite3 import Row
 from urllib.parse import urlencode, urlparse
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response, status
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -1484,6 +1484,28 @@ def support_page(request: Request) -> HTMLResponse:
     return _public_page(request, "support")
 
 
+@app.get("/payments/authorize-net/complete", include_in_schema=False)
+def authorize_net_payment_complete() -> RedirectResponse:
+    return RedirectResponse(url="/?payment=complete", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.get("/payments/authorize-net/cancel", include_in_schema=False)
+def authorize_net_payment_cancel() -> RedirectResponse:
+    return RedirectResponse(url="/?payment=cancelled", status_code=status.HTTP_303_SEE_OTHER)
+
+
+def _authorize_net_callback_urls(request: Request) -> tuple[str, str]:
+    if settings.public_base_url:
+        return (
+            f"{settings.public_base_url}/payments/authorize-net/complete",
+            f"{settings.public_base_url}/payments/authorize-net/cancel",
+        )
+    return (
+        str(request.url_for("authorize_net_payment_complete")),
+        str(request.url_for("authorize_net_payment_cancel")),
+    )
+
+
 @app.get("/kryptnet-admin", response_class=HTMLResponse)
 @app.get("/kryptnet-admin/", response_class=HTMLResponse)
 def admin_index(request: Request) -> HTMLResponse:
@@ -2419,9 +2441,7 @@ def create_payment_checkout(
     plan = _plan_details(payload.plan)
     provider_reference = f"ks{secrets.token_hex(9)}"
     if settings.payment_provider == "authorize_net":
-        home_url = f"{settings.public_base_url}/" if settings.public_base_url else str(request.url_for("index"))
-        return_url = f"{home_url}?{urlencode({'payment': 'complete', 'reference': provider_reference})}"
-        cancel_url = f"{home_url}?{urlencode({'payment': 'cancelled', 'reference': provider_reference})}"
+        return_url, cancel_url = _authorize_net_callback_urls(request)
         try:
             hosted_checkout = create_hosted_payment_token(
                 api_login_id=settings.authorize_net_api_login_id,
