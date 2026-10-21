@@ -76,7 +76,7 @@ The dashboard includes three one-time credit-pack buttons:
 - Business
 - MSP
 
-Each button requests a unique Authorize.Net Accept Hosted token for credit-card payment. The app does not collect card numbers or CVC values. A verified successful webhook grants 10, 30, or 100 purchased credits to the purchaser. Repeated webhook delivery is idempotent.
+Each button requests a unique Authorize.Net Accept Hosted token for credit-card payment. The app does not collect card numbers or CVC values. A verified successful webhook grants 20, 45, or 90 purchased credits to the purchaser. Repeated webhook delivery is idempotent.
 
 Configure Authorize.Net to send `net.authorize.payment.authcapture.created` events to `https://kryptscan.kryptnet.org/api/payments/webhook/authorize-net`. KryptScan validates the webhook HMAC-SHA512 signature and independently retrieves the transaction before granting credits. Configure sandbox credentials first:
 

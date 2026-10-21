@@ -531,30 +531,30 @@ def _serialize_entitlement(entitlement: Row | None) -> dict:
 PLAN_CATALOG = {
     "professional": {
         "name": "Professional",
-        "amount_cents": 1900,
+        "amount_cents": 2900,
         "currency": "USD",
-        "credits": 10,
+        "credits": 20,
         "access_days": 365,
         "payment_path": "/checkout/professional",
-        "description": "Ten purchased credits for IT professionals and small businesses.",
+        "description": "Twenty purchased credits for IT professionals and small businesses.",
     },
     "business": {
         "name": "Business",
-        "amount_cents": 4900,
+        "amount_cents": 5900,
         "currency": "USD",
-        "credits": 30,
+        "credits": 45,
         "access_days": 365,
         "payment_path": "/checkout/business",
-        "description": "Thirty purchased credits for internal security teams.",
+        "description": "Forty-five purchased credits for internal security teams.",
     },
     "msp": {
         "name": "MSP",
         "amount_cents": 9900,
         "currency": "USD",
-        "credits": 100,
+        "credits": 90,
         "access_days": 365,
         "payment_path": "/checkout/msp",
-        "description": "One hundred purchased credits for consultants and managed service providers.",
+        "description": "Ninety purchased credits for consultants and managed service providers.",
     },
 }
 
@@ -568,10 +568,22 @@ def _plan_details(plan: str) -> dict:
     return plan
 
 
+PLAN_AUDIENCES = {
+    "professional": "IT professionals and small businesses",
+    "business": "Internal security teams",
+    "msp": "Consultants and managed service providers",
+}
+
+
 PUBLIC_PRICING_PLANS = [
-    {"id": "professional", "name": "Professional", "price_usd": 19, "credits": 10, "audience": "IT professionals and small businesses"},
-    {"id": "business", "name": "Business", "price_usd": 49, "credits": 30, "audience": "Internal security teams"},
-    {"id": "msp", "name": "MSP", "price_usd": 99, "credits": 100, "audience": "Consultants and managed service providers"},
+    {
+        "id": plan_id,
+        "name": plan["name"],
+        "price_usd": plan["amount_cents"] // 100,
+        "credits": plan["credits"],
+        "audience": PLAN_AUDIENCES[plan_id],
+    }
+    for plan_id, plan in PLAN_CATALOG.items()
 ]
 
 
@@ -1407,6 +1419,7 @@ def index(request: Request) -> HTMLResponse:
             "app_name": settings.app_name,
             "scanner_backend": settings.scanner_backend,
             "email_delivery": settings.email_delivery,
+            "plans": PUBLIC_PRICING_PLANS,
         },
     )
 
@@ -1418,11 +1431,25 @@ def kryptscan_index(request: Request) -> HTMLResponse:
 
 
 def _public_page(request: Request, page: str, policy: str | None = None) -> HTMLResponse:
-    return templates.TemplateResponse(
+    try:
+        current_user = get_current_user(request)
+    except HTTPException:
+        current_user = None
+    response = templates.TemplateResponse(
         request,
         "public.html",
-        {"app_name": settings.app_name, "page": page, "policy": policy, "plans": PUBLIC_PRICING_PLANS, "services": CREDIT_CATALOG},
+        {
+            "app_name": settings.app_name,
+            "page": page,
+            "policy": policy,
+            "plans": PUBLIC_PRICING_PLANS,
+            "services": CREDIT_CATALOG,
+            "authenticated": current_user is not None,
+        },
     )
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Vary"] = "Cookie"
+    return response
 
 
 @app.get("/pricing", response_class=HTMLResponse)

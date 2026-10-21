@@ -139,7 +139,7 @@ class CreditLedgerTests(unittest.TestCase):
                 payment_method, status, provider_reference, payer_name,
                 payer_email, safe_details_json, created_by, created_at
             ) VALUES (
-                1, 'kryptnet_payment_api', 'professional', 1900, 'USD',
+                1, 'kryptnet_payment_api', 'professional', 2900, 'USD',
                 'debit_credit_checkout', 'paid', 'payment-reference-001',
                 'Example', 'tester@example.com', '{}', 1, '2026-09-30T12:00:00+00:00'
             )
@@ -150,14 +150,14 @@ class CreditLedgerTests(unittest.TestCase):
             (cursor.lastrowid,),
         ).fetchone()
 
-        first = grant_payment_credits(self.connection, payment=payment, credits=10)
-        second = grant_payment_credits(self.connection, payment=payment, credits=10)
+        first = grant_payment_credits(self.connection, payment=payment, credits=20)
+        second = grant_payment_credits(self.connection, payment=payment, credits=20)
 
-        self.assertEqual(first["credits_granted"], 10)
+        self.assertEqual(first["credits_granted"], 20)
         self.assertFalse(first["already_granted"])
         self.assertEqual(second["credits_granted"], 0)
         self.assertTrue(second["already_granted"])
-        self.assertEqual(wallet_snapshot(self.connection, self.user)["purchased"], 10)
+        self.assertEqual(wallet_snapshot(self.connection, self.user)["purchased"], 20)
         transaction_count = self.connection.execute(
             "SELECT COUNT(*) FROM credit_transactions WHERE payment_id = ?",
             (payment["id"],),

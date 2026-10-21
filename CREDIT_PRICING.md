@@ -24,9 +24,9 @@ Deep VA adds expanded safe network and web surface mapping. Ethical Pen-Testing 
 
 | Plan | One-time price | Included credits |
 | --- | ---: | ---: |
-| Professional | $19 | 10 |
-| Business | $49 | 30 |
-| MSP | $99 | 100 |
+| Professional | $29 | 20 |
+| Business | $59 | 45 |
+| MSP | $99 | 90 |
 
 Authorize.Net Accept Hosted securely collects card details. Successful signed webhooks are independently verified through Authorize.Net transaction reporting before the selected pack is added to the purchaser's balance. Webhook retries are idempotent and cannot add the same purchase twice.
 

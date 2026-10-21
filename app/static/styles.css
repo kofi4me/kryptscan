@@ -2031,6 +2031,7 @@ button.ghost {
 }
 
 .public-plan-card a,
+.public-plan-action,
 .public-primary-link {
   display: inline-flex;
   width: fit-content;
@@ -2039,8 +2040,16 @@ button.ghost {
   border-radius: 6px;
   background: #1f4fbf;
   color: #ffffff;
+  border: 0;
+  font: inherit;
   font-weight: 800;
   text-decoration: none;
+  cursor: pointer;
+}
+
+.public-plan-action:disabled {
+  opacity: 0.65;
+  cursor: wait;
 }
 
 .public-content-band {

@@ -38,7 +38,7 @@ class AuthorizeNetTests(unittest.TestCase):
             transaction_key="transaction-key",
             environment="sandbox",
             reference="ks123456789012345678",
-            amount_cents=1900,
+            amount_cents=2900,
             currency="USD",
             email="tester@example.com",
             description="KryptScan Professional credit pack",
@@ -48,7 +48,7 @@ class AuthorizeNetTests(unittest.TestCase):
         self.assertEqual(result["token"], "hosted-token")
         request_payload = post_json.call_args.args[1]["getHostedPaymentPageRequest"]
         self.assertEqual(request_payload["refId"], "ks123456789012345678")
-        self.assertEqual(request_payload["transactionRequest"]["amount"], "19.00")
+        self.assertEqual(request_payload["transactionRequest"]["amount"], "29.00")
         self.assertEqual(request_payload["transactionRequest"]["currencyCode"], "USD")
         self.assertEqual(request_payload["transactionRequest"]["order"]["invoiceNumber"], "ks123456789012345678")
 
@@ -67,7 +67,7 @@ class AuthorizeNetTests(unittest.TestCase):
                 "transId": "60123456789",
                 "transactionType": "authCaptureTransaction",
                 "transactionStatus": "capturedPendingSettlement",
-                "authAmount": "19.00",
+                "authAmount": "29.00",
                 "currencyCode": "USD",
                 "order": {"invoiceNumber": "ks123456789012345678"},
             },
@@ -75,7 +75,7 @@ class AuthorizeNetTests(unittest.TestCase):
         verified = validate_paid_transaction(
             response,
             expected_reference="ks123456789012345678",
-            expected_amount_cents=1900,
+            expected_amount_cents=2900,
             expected_currency="USD",
         )
         self.assertEqual(verified["transaction_id"], "60123456789")
@@ -83,14 +83,14 @@ class AuthorizeNetTests(unittest.TestCase):
             validate_paid_transaction(
                 response,
                 expected_reference="ks123456789012345678",
-                expected_amount_cents=4900,
+                expected_amount_cents=5900,
                 expected_currency="USD",
             )
         with self.assertRaisesRegex(AuthorizeNetError, "reference"):
             validate_paid_transaction(
                 response,
                 expected_reference="ks000000000000000000",
-                expected_amount_cents=1900,
+                expected_amount_cents=2900,
                 expected_currency="USD",
             )
 

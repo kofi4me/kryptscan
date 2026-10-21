@@ -28,7 +28,7 @@
       <div class="nav-actions">
         <button id="nav-signin-button" class="nav-button outline" type="button" data-auth-mode="signin">Sign In</button>
         <button id="nav-signup-button" class="nav-button solid" type="button" data-auth-mode="signup">Sign Up</button>
-        <button id="nav-logout-button" class="nav-button outline hidden" type="button">Log Out</button>
+        <button id="nav-logout-button" class="nav-button outline hidden" type="button">Sign Out</button>
       </div>
     </header>
 
@@ -324,7 +324,7 @@
                 for deeper MSP-led testing under approved scope.
               </p>
             </div>
-            <button id="choice-logout-button" class="ghost">Log Out</button>
+            <button id="choice-logout-button" class="ghost">Sign Out</button>
           </div>
           <div class="mode-selector" aria-label="Tool choice">
             <button type="button" class="mode-card" data-choice-mode="vulnerability_assessment">
@@ -354,7 +354,7 @@
                 <span>Available credits</span>
                 <strong id="credit-balance-value">0</strong>
               </div>
-              <button id="logout-button" class="ghost">Log Out</button>
+              <button id="logout-button" class="ghost">Sign Out</button>
             </div>
           </div>
 
@@ -567,21 +567,13 @@
               </div>
             </div>
             <div class="plan-grid">
-              <button type="button" class="plan-card" data-plan="professional">
-                <span>Professional</span>
-                <strong>$19</strong>
-                <small>10 credits for IT professionals and small businesses.</small>
+              {% for plan in plans %}
+              <button type="button" class="plan-card{% if plan.id == 'business' %} featured{% endif %}" data-plan="{{ plan.id }}">
+                <span>{{ plan.name }}</span>
+                <strong>${{ plan.price_usd }}</strong>
+                <small>{{ plan.credits }} credits. {{ plan.audience }}.</small>
               </button>
-              <button type="button" class="plan-card featured" data-plan="business">
-                <span>Business</span>
-                <strong>$49</strong>
-                <small>30 credits for internal security teams.</small>
-              </button>
-              <button type="button" class="plan-card" data-plan="msp">
-                <span>MSP</span>
-                <strong>$99</strong>
-                <small>100 credits for consultants and managed service providers.</small>
-              </button>
+              {% endfor %}
             </div>
           </section>
 

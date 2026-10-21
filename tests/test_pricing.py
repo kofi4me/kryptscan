@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+import unittest
+from unittest.mock import patch
+
+from fastapi import HTTPException
+from starlette.requests import Request
+
+from app.main import PLAN_CATALOG, PUBLIC_PRICING_PLANS, _public_page
+
+
+class PricingCatalogTests(unittest.TestCase):
+    @staticmethod
+    def _request() -> Request:
+        return Request(
+            {
+                "type": "http",
+                "http_version": "1.1",
+                "method": "GET",
+                "scheme": "https",
+                "path": "/pricing",
+                "raw_path": b"/pricing",
+                "query_string": b"",
+                "headers": [(b"host", b"kryptscan.kryptnet.org")],
+                "client": ("127.0.0.1", 12345),
+                "server": ("kryptscan.kryptnet.org", 443),
+            }
+        )
+
+    def test_credit_pack_prices_and_credits_match_launch_catalog(self) -> None:
+        expected = {
+            "professional": (2900, 20),
+            "business": (5900, 45),
+            "msp": (9900, 90),
+        }
+
+        self.assertEqual(
+            {
+                plan_id: (plan["amount_cents"], plan["credits"])
+                for plan_id, plan in PLAN_CATALOG.items()
+            },
+            expected,
+        )
+        self.assertEqual(
+            {
+                plan["id"]: (plan["price_usd"], plan["credits"])
+                for plan in PUBLIC_PRICING_PLANS
+            },
+            {
+                plan_id: (amount_cents // 100, credits)
+                for plan_id, (amount_cents, credits) in expected.items()
+            },
+        )
+
+    def test_authenticated_pricing_page_offers_checkout_and_sign_out(self) -> None:
+        with patch("app.main.get_current_user", return_value={"id": 1}):
+            response = _public_page(self._request(), "pricing")
+        body = response.body.decode("utf-8")
+
+        self.assertIn("Sign Out", body)
+        self.assertIn("Select Plan", body)
+        self.assertIn("$29", body)
+        self.assertIn("20 purchased scan credits", body)
+        self.assertIn("$59", body)
+        self.assertIn("45 purchased scan credits", body)
+        self.assertIn("$99", body)
+        self.assertIn("90 purchased scan credits", body)
+        self.assertNotIn("Sign In", body)
+        self.assertNotIn("Create Account", body)
+        self.assertEqual(response.headers["cache-control"], "private, no-store, max-age=0")
+        self.assertEqual(response.headers["vary"], "Cookie")
+
+    def test_visitor_pricing_page_offers_account_actions(self) -> None:
+        with patch(
+            "app.main.get_current_user",
+            side_effect=HTTPException(status_code=401),
+        ):
+            response = _public_page(self._request(), "pricing")
+        body = response.body.decode("utf-8")
+
+        self.assertIn("Sign In", body)
+        self.assertIn("Create Account", body)
+        self.assertNotIn("Sign Out", body)
+        self.assertNotIn("Select Plan", body)
+
+
+if __name__ == "__main__":
+    unittest.main()

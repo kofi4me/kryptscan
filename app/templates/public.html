@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/public.js" defer></script>
   </head>
   <body class="public-page-body">
     <header class="masthead public-page-header">
@@ -15,7 +16,15 @@
       <nav class="public-nav always-visible" aria-label="Public navigation">
         <a href="/">Home</a><a href="/pricing">Pricing</a><a href="/about">About</a><a href="/policies">Policies</a><a href="/support">Support</a>
       </nav>
-      <div class="nav-actions"><a class="nav-button outline" href="/?auth=signin">Sign In</a><a class="nav-button solid" href="/?auth=signup">Create Account</a></div>
+      <div class="nav-actions">
+        {% if authenticated %}
+        <a class="nav-button outline" href="/">Workspace</a>
+        <button id="public-logout-button" class="nav-button solid" type="button">Sign Out</button>
+        {% else %}
+        <a class="nav-button outline" href="/?auth=signin">Sign In</a>
+        <a class="nav-button solid" href="/?auth=signup">Create Account</a>
+        {% endif %}
+      </div>
     </header>
 
     <main class="public-page-shell">
@@ -23,9 +32,20 @@
       <section class="public-intro"><div class="eyebrow">Pricing</div><h1>Credits that match the work performed.</h1><p>Begin with one free basic vulnerability assessment. Paid plans provide reusable credits for professional assessments and downloadable reports.</p></section>
       <section class="public-plan-grid">
         {% for plan in plans %}
-        <article class="public-plan-card{% if plan.id == 'business' %} featured{% endif %}"><span>{{ plan.name }}</span><strong>${{ plan.price_usd }}</strong><p>{{ plan.credits }} purchased scan credits</p><p>{{ plan.audience }}</p><a href="/?auth=signup">Create Account</a></article>
+        <article class="public-plan-card{% if plan.id == 'business' %} featured{% endif %}">
+          <span>{{ plan.name }}</span>
+          <strong>${{ plan.price_usd }}</strong>
+          <p>{{ plan.credits }} purchased scan credits</p>
+          <p>{{ plan.audience }}</p>
+          {% if authenticated %}
+          <button class="public-plan-action" type="button" data-public-plan="{{ plan.id }}">Select Plan</button>
+          {% else %}
+          <a href="/?auth=signup">Create Account</a>
+          {% endif %}
+        </article>
         {% endfor %}
       </section>
+      {% if authenticated %}<div id="public-pricing-status" class="status-card neutral hidden" role="status" aria-live="polite"></div>{% endif %}
       <section class="public-content-band"><h2>Credit usage</h2><div class="public-rate-grid"><div><strong>Free Basic VA</strong><span>One per verified organization</span></div><div><strong>Standard VA</strong><span>1 credit</span></div><div><strong>Deep VA</strong><span>3 credits</span></div><div><strong>Ethical Pen-Test</strong><span>8 credits</span></div><div><strong>Remediation Retest</strong><span>1 credit</span></div></div><p class="policy-note">Purchased credits are added after payment verification. Tester and promotional coupons remain available during launch review.</p></section>
       {% elif page == 'about' %}
       <section class="public-intro"><div class="eyebrow">About KryptScan</div><h1>Practical security assessment for teams responsible for real systems.</h1><p>KryptScan is developed by KryptNet LLC for IT professionals, security teams, consultants, and MSPs that need repeatable vulnerability assessment and authorized ethical testing.</p></section>
