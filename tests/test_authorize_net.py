@@ -10,6 +10,7 @@ from app.services.authorize_net import (
     AuthorizeNetError,
     authorize_net_endpoints,
     create_hosted_payment_token,
+    get_transaction_details,
     validate_paid_transaction,
     verify_webhook_signature,
 )
@@ -28,10 +29,8 @@ class AuthorizeNetTests(unittest.TestCase):
     @patch("app.services.authorize_net._post_json")
     def test_hosted_checkout_uses_server_amount_and_reference(self, post_json) -> None:
         post_json.return_value = {
-            "getHostedPaymentPageResponse": {
-                "token": "hosted-token",
-                "messages": {"resultCode": "Ok", "message": [{"code": "I00001", "text": "Successful."}]},
-            }
+            "token": "hosted-token",
+            "messages": {"resultCode": "Ok", "message": [{"code": "I00001", "text": "Successful."}]},
         }
         result = create_hosted_payment_token(
             api_login_id="login",
@@ -51,6 +50,47 @@ class AuthorizeNetTests(unittest.TestCase):
         self.assertEqual(request_payload["transactionRequest"]["amount"], "29.00")
         self.assertEqual(request_payload["transactionRequest"]["currencyCode"], "USD")
         self.assertEqual(request_payload["transactionRequest"]["order"]["invoiceNumber"], "ks123456789012345678")
+
+    @patch("app.services.authorize_net._post_json")
+    def test_transaction_details_accepts_documented_flat_response(self, post_json) -> None:
+        post_json.return_value = {
+            "refId": "ks123456789012345678",
+            "transaction": {"transId": "60123456789"},
+            "messages": {"resultCode": "Ok", "message": [{"code": "I00001", "text": "Successful."}]},
+        }
+
+        result = get_transaction_details(
+            api_login_id="login",
+            transaction_key="transaction-key",
+            environment="production",
+            transaction_id="60123456789",
+        )
+
+        self.assertEqual(result["transaction"]["transId"], "60123456789")
+
+    @patch("app.services.authorize_net._post_json")
+    def test_hosted_checkout_retains_wrapped_response_compatibility(self, post_json) -> None:
+        post_json.return_value = {
+            "getHostedPaymentPageResponse": {
+                "token": "wrapped-token",
+                "messages": {"resultCode": "Ok", "message": [{"code": "I00001", "text": "Successful."}]},
+            }
+        }
+
+        result = create_hosted_payment_token(
+            api_login_id="login",
+            transaction_key="transaction-key",
+            environment="sandbox",
+            reference="ks123456789012345678",
+            amount_cents=2900,
+            currency="USD",
+            email="tester@example.com",
+            description="KryptScan Professional credit pack",
+            return_url="https://example.com/?payment=complete",
+            cancel_url="https://example.com/?payment=cancelled",
+        )
+
+        self.assertEqual(result["token"], "wrapped-token")
 
     def test_webhook_signature_uses_authorize_net_hmac_sha512_format(self) -> None:
         raw_body = json.dumps({"eventType": "net.authorize.payment.authcapture.created"}).encode("utf-8")

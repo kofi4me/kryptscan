@@ -49,10 +49,13 @@ def _post_json(url: str, payload: dict[str, Any], timeout_seconds: int) -> dict[
     return parsed
 
 
+def _response_payload(response: dict[str, Any], response_name: str) -> dict[str, Any]:
+    nested = response.get(response_name)
+    return nested if isinstance(nested, dict) else response
+
+
 def _response_error(response: dict[str, Any], response_name: str) -> AuthorizeNetError | None:
-    payload = response.get(response_name)
-    if not isinstance(payload, dict):
-        return AuthorizeNetError("Authorize.Net returned an unexpected response.")
+    payload = _response_payload(response, response_name)
     messages = payload.get("messages") or {}
     if str(messages.get("resultCode") or "").lower() == "ok":
         return None
@@ -158,7 +161,8 @@ def create_hosted_payment_token(
     error = _response_error(response, "getHostedPaymentPageResponse")
     if error:
         raise error
-    token = str(response["getHostedPaymentPageResponse"].get("token") or "").strip()
+    response_payload = _response_payload(response, "getHostedPaymentPageResponse")
+    token = str(response_payload.get("token") or "").strip()
     if not token:
         raise AuthorizeNetError("Authorize.Net did not return a hosted payment token.")
     return {"token": token, "hosted_form_url": hosted_form_url}
@@ -193,7 +197,7 @@ def get_transaction_details(
     error = _response_error(response, "getTransactionDetailsResponse")
     if error:
         raise error
-    return response["getTransactionDetailsResponse"]
+    return _response_payload(response, "getTransactionDetailsResponse")
 
 
 def verify_webhook_signature(raw_body: bytes, signature_header: str, signature_key: str) -> bool:
