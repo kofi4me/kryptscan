@@ -46,6 +46,14 @@ Admins create coupons in the hidden `/kryptnet-admin` console. Coupon codes are 
 
 Promotional credits are tracked separately from purchased credits and are consumed first.
 
+For short-lived checkout testing, create one coupon matching each credit pack from the application directory:
+
+```bash
+./venv/bin/python -m ops.create_test_coupons --expires-days 7 --max-redemptions 1
+```
+
+The command creates 20-, 45-, and 90-credit coupons, prints each random code once, and stores only its SHA-256 hash. Use `--admin-email admin@example.com` when more than one administrator exists and a specific creator must be recorded.
+
 ## Public Pages
 
 - `/pricing`
