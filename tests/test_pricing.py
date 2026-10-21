@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from app.main import PLAN_CATALOG, PUBLIC_PRICING_PLANS, _public_page
+from app.main import (
+    PLAN_CATALOG,
+    PUBLIC_PRICING_PLANS,
+    _public_page,
+    create_payment_intent,
+)
+from app.models import PaymentIntentRequest
 
 
 class PricingCatalogTests(unittest.TestCase):
@@ -82,6 +89,31 @@ class PricingCatalogTests(unittest.TestCase):
         self.assertIn("Create Account", body)
         self.assertNotIn("Sign Out", body)
         self.assertNotIn("Select Plan", body)
+
+    def test_completed_accounts_can_purchase_regardless_of_role(self) -> None:
+        payment_settings = SimpleNamespace(
+            payment_required=True,
+            payment_provider="authorize_net",
+            rate_limit_enabled=False,
+            kryptnet_payment_api_url="",
+        )
+        for role in ("owner", "analyst", "client_viewer", "admin", "super_admin"):
+            user = {
+                "role": role,
+                "profile_completed_at": "2026-10-20T00:00:00+00:00",
+                "safe_use_accepted": 1,
+                "data_protection_accepted": 1,
+                "password_hash": "configured",
+            }
+            with self.subTest(role=role), patch("app.main.settings", payment_settings):
+                result = create_payment_intent(
+                    self._request(),
+                    PaymentIntentRequest(plan="professional"),
+                    user,
+                )
+
+                self.assertEqual(result["provider"], "authorize_net")
+                self.assertEqual(result["plan"]["credits"], 20)
 
 
 if __name__ == "__main__":

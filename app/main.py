@@ -624,6 +624,10 @@ def _require_completed_registration(user: Row) -> None:
         )
 
 
+def _require_credit_purchase_access(user: Row) -> None:
+    _require_completed_registration(user)
+
+
 def _is_client_viewer(user: Row) -> bool:
     return user["role"] == "client_viewer"
 
@@ -2379,8 +2383,7 @@ def create_payment_intent(
     _rate_limit(request, "payments.intent", limit=20, window_seconds=60)
     if not settings.payment_required:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Payment is disabled for this launch phase.")
-    _require_owner(user)
-    _require_completed_registration(user)
+    _require_credit_purchase_access(user)
     plan = _plan_details(payload.plan)
     if settings.payment_provider == "authorize_net":
         return {
@@ -2412,8 +2415,7 @@ def create_payment_checkout(
     _rate_limit(request, "payments.checkout", limit=10, window_seconds=60)
     if not settings.payment_required:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="Payment is disabled for this launch phase.")
-    _require_owner(user)
-    _require_completed_registration(user)
+    _require_credit_purchase_access(user)
     plan = _plan_details(payload.plan)
     provider_reference = f"ks{secrets.token_hex(9)}"
     if settings.payment_provider == "authorize_net":
@@ -2837,8 +2839,7 @@ def submit_payment(
     user: Row = Depends(get_current_user),
 ) -> dict:
     _rate_limit(request, "payments.submit", limit=10, window_seconds=60)
-    _require_owner(user)
-    _require_completed_registration(user)
+    _require_credit_purchase_access(user)
     raise HTTPException(
         status_code=status.HTTP_410_GONE,
         detail="Direct payment submission is disabled. Use KryptNet debit/credit checkout only.",
