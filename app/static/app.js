@@ -1203,7 +1203,8 @@ function renderDashboard(payload) {
             <span class="pill ${scan.status}">${scan.status}</span>
           </header>
           <div class="meta-line">
-            <span>Risk score: ${scan.risk_score ?? "Pending"}</span>
+            <span>Risk score: ${scan.risk_score ?? (scan.status === "completed" ? "Undetermined" : "Pending")}</span>
+            ${scan.assessment_outcome ? `<span>Assessment: ${escapeHtml(scan.assessment_outcome)}</span>` : ""}
             <span>Manual findings: ${scan.manual_finding_count ?? 0}</span>
             <span>${severityText(scan.severity_counts)}</span>
           </div>
@@ -1261,8 +1262,8 @@ function renderClientPortal(payload) {
                   <strong>${escapeHtml(report.target)}</strong>
                   <div class="meta-line">
                     <span>${escapeHtml(formatMode(report.assessment_mode))}</span>
-                    <span>${escapeHtml(report.risk_band)} risk</span>
-                    <span>Score ${report.risk_score}</span>
+                    <span>${escapeHtml(report.risk_band === "Undetermined" ? "Risk undetermined" : `${report.risk_band} risk`)}</span>
+                    <span>Score ${report.risk_score == null ? "Undetermined" : report.risk_score}</span>
                   </div>
                 </div>
                 <div class="report-format-actions">
@@ -1294,7 +1295,7 @@ function renderClientPortal(payload) {
 
 function renderReport(report) {
   const riskBand = document.getElementById("report-risk-band");
-  riskBand.textContent = `${report.risk_band} Risk`;
+  riskBand.textContent = report.risk_band === "Undetermined" ? "Risk Undetermined" : `${report.risk_band} Risk`;
   riskBand.className = `risk-band ${String(report.risk_band).toLowerCase()}`;
   const activeScan = state.dashboard?.scans?.find((scan) => scan.id === state.activeScanId);
   document
@@ -1398,8 +1399,21 @@ function renderReport(report) {
         <strong>Assessment Coverage</strong>
         <span class="pill ${String(report.assessment_coverage_status || "").toLowerCase()}">${escapeHtml(report.assessment_coverage_status || "Complete")}</span>
       </div>
-      <p>${Number(report.assessment_coverage || 0)}% of intended assessment components completed. Scanner errors are listed as diagnostics, not customer vulnerabilities.</p>
+      <p>Outcome: ${escapeHtml(report.assessment_outcome || "INCONCLUSIVE")}. ${Number(report.assessment_coverage || 0)}% of applicable checks produced a usable security result. Scanner errors are listed as diagnostics, not customer vulnerabilities.</p>
     </article>
+    ${(report.coverage_categories || [])
+      .map(
+        (item) => `
+          <article class="check-card report-check-card">
+            <div class="meta-line">
+              <strong>${escapeHtml(item.name)}</strong>
+              <span class="pill ${String(item.status || "").toLowerCase()}">${escapeHtml(item.status || "INCONCLUSIVE")}</span>
+            </div>
+            <p>${escapeHtml(item.reason || "No additional coverage detail supplied.")}</p>
+          </article>
+        `
+      )
+      .join("")}
     ${
       diagnostics.length
         ? `<h3>Assessment Diagnostics</h3>${diagnostics
@@ -1421,7 +1435,7 @@ function renderReport(report) {
     ${
       vulnerabilityFindings.length
         ? vulnerabilityFindings.map(renderFindingCard).join("")
-        : `<div class="check-card">No confirmed or potential vulnerability findings were validated from the available scanner evidence.</div>`
+        : `<div class="check-card">No confirmed or potential vulnerability finding was available in the usable scanner evidence. Review coverage and limitations before drawing assurance conclusions.</div>`
     }
     <h3>Exposures and Security Observations</h3>
     ${
@@ -1439,21 +1453,22 @@ function renderReportCockpit(report, activeScan) {
     0
   );
   const coverage = Number(report.assessment_coverage || 0);
-  const riskScore = Number(report.risk_score || 0);
+  const hasRiskScore = report.risk_score !== null && report.risk_score !== undefined;
+  const riskScore = hasRiskScore ? Number(report.risk_score) : null;
   const criticalHigh = Number(counts.critical || 0) + Number(counts.high || 0);
-  const riskAngle = Math.max(0, Math.min(100, riskScore)) * 3.6;
+  const riskAngle = hasRiskScore ? Math.max(0, Math.min(100, riskScore)) * 3.6 : 0;
   const targetLabel = activeScan?.target || report.findings?.[0]?.host || "Completed assessment";
 
   document.getElementById("report-target-title").textContent = targetLabel;
   document.getElementById("executive-summary").textContent = report.executive_summary;
-  document.getElementById("report-risk-score").textContent = riskScore;
+  document.getElementById("report-risk-score").textContent = hasRiskScore ? riskScore : "N/A";
   document.querySelector(".risk-orbit").style.setProperty("--risk-angle", `${riskAngle}deg`);
   document.getElementById("report-scope").textContent =
     report.scope_summary || "Scope details were not supplied for this report.";
 
   const kpis = [
-    ["Risk Score", `${riskScore}/100`, report.risk_band || "N/A"],
-    ["Coverage", `${coverage}%`, report.assessment_coverage_status || "Complete"],
+    ["Risk Score", hasRiskScore ? `${riskScore}/100` : "Undetermined", report.risk_band || "N/A"],
+    ["Coverage", `${coverage}%`, report.assessment_outcome || report.assessment_coverage_status || "INCONCLUSIVE"],
     ["Vulnerabilities", totalFindings, "Validated findings"],
     ["Critical + High", criticalHigh, "Immediate focus"],
   ];

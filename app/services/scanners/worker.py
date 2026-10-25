@@ -66,6 +66,7 @@ class WorkerScannerProvider:
                 backend=self.backend_name,
                 message=body.get("message", "Scanner worker accepted the job."),
                 external_task_id=body.get("job_id"),
+                progress_percent=body.get("progress_percent"),
             )
 
         return ScheduledScan(
@@ -74,6 +75,7 @@ class WorkerScannerProvider:
             message=body.get("message", "Scanner worker completed the job."),
             external_task_id=body.get("job_id"),
             report=AssessmentReport.model_validate(body["report"]),
+            progress_percent=body.get("progress_percent"),
         )
 
     def refresh(
@@ -107,4 +109,5 @@ class WorkerScannerProvider:
             status=body.get("status", "running"),
             message=body.get("message", "Scanner worker is running the approved toolchain."),
             report=report,
+            progress_percent=body.get("progress_percent"),
         )

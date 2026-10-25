@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nmap \
     perl \
     pkg-config \
+    procps \
     python3-pip \
     ruby \
     unzip \
@@ -33,6 +34,7 @@ RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go
     && rm /tmp/go.tgz
 
 RUN go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && go clean -cache -modcache
+RUN nuclei -update-templates -silent
 RUN go install github.com/projectdiscovery/httpx/cmd/httpx@latest && go clean -cache -modcache
 RUN go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && go clean -cache -modcache
 RUN go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest && go clean -cache -modcache

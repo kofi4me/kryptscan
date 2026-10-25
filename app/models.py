@@ -257,12 +257,46 @@ class RemediationItem(BaseModel):
     owner: str
 
 
+class AssessmentCheckResult(BaseModel):
+    name: str
+    category: str
+    execution_status: str
+    security_result: str
+    applicable: bool = True
+    elapsed_seconds: float = 0.0
+    detail: str = ""
+
+
+class CoverageSummary(BaseModel):
+    planned: int = 0
+    applicable: int = 0
+    executed: int = 0
+    successfully_evaluated: int = 0
+    failed: int = 0
+    timed_out: int = 0
+    skipped: int = 0
+    not_applicable: int = 0
+    inconclusive: int = 0
+
+
+class CoverageCategory(BaseModel):
+    name: str
+    status: str
+    reason: str = ""
+
+
 class AssessmentReport(BaseModel):
     executive_summary: str
-    risk_score: int
+    risk_score: int | None
     risk_band: str
+    risk_model_version: str = "KS-RISK-2.0"
+    assessment_outcome: str = "INCONCLUSIVE"
     assessment_coverage: int = 100
     assessment_coverage_status: str = "Complete"
+    coverage_summary: CoverageSummary = Field(default_factory=CoverageSummary)
+    coverage_categories: list[CoverageCategory] = Field(default_factory=list)
+    check_results: list[AssessmentCheckResult] = Field(default_factory=list)
+    analyst_review_status: str = "NOT_PERFORMED"
     severity_counts: SeverityCounts
     scope_summary: str = ""
     methodology: list[str] = Field(default_factory=list)
@@ -292,6 +326,8 @@ class ScanSummary(BaseModel):
     completed_at: str | None = None
     error_message: str | None = None
     risk_score: int | None = None
+    risk_band: str | None = None
+    assessment_outcome: str | None = None
     severity_counts: SeverityCounts | None = None
     report_pdf_available: bool = False
     report_json_available: bool = False

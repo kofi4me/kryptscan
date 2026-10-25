@@ -11,6 +11,7 @@ from typing import Any, Mapping
 from jsonschema import Draft202012Validator
 
 from app.models import AssessmentReport, Finding
+from app.services.reporting import is_customer_facing_service
 
 
 SCHEMA_VERSION = "1.0"
@@ -131,6 +132,8 @@ def _services(findings: list[Finding], asset_ids: dict[str, str]) -> list[dict[s
     services: list[dict[str, Any]] = []
     seen: set[tuple[Any, ...]] = set()
     for finding in findings:
+        if not is_customer_facing_service(finding):
+            continue
         port, protocol = _port_protocol(finding.port)
         if port is None and not finding.service:
             continue
@@ -277,12 +280,14 @@ def build_json_report(scan: Mapping[str, Any], report: AssessmentReport) -> dict
             "methodology": report.methodology,
             "authenticated": None,
             "configuration_profile": None,
+            "assessment_outcome": report.assessment_outcome,
         },
         "target": target_data,
         "executive_summary": {
             "narrative": report.executive_summary,
             "overall_risk": report.risk_band.lower(),
             "risk_score": report.risk_score,
+            "risk_model_version": report.risk_model_version,
             "total_findings": len(findings),
             **severity_counts,
         },
@@ -303,9 +308,14 @@ def build_json_report(scan: Mapping[str, Any], report: AssessmentReport) -> dict
             "recommended_next_step": "Prioritize confirmed critical and high findings, apply remediation, and perform verification scanning.",
             "assessment_coverage": report.assessment_coverage,
             "assessment_coverage_status": report.assessment_coverage_status,
+            "assessment_outcome": report.assessment_outcome,
+            "coverage_summary": report.coverage_summary.model_dump(mode="json"),
+            "coverage_categories": [item.model_dump(mode="json") for item in report.coverage_categories],
+            "analyst_review_status": report.analyst_review_status,
         },
         "penetration_test": {
-            "validated": any(item.validation_status in {"CONFIRMED", "LIKELY"} for item in report.findings),
+            "validated": report.analyst_review_status in {"EVIDENCE_ATTACHED", "APPROVED"}
+            and any("Manual analyst review" in item.detected_by for item in report.findings),
             "attack_stage": None,
             "attack_path": [],
             "affected_assets": list(asset_ids.values()),
@@ -316,6 +326,7 @@ def build_json_report(scan: Mapping[str, Any], report: AssessmentReport) -> dict
             "classification": "confidential",
             "assessment_limitations": report.limitations,
             "data_quality": "Observed fields are preserved; unavailable values are represented as null or empty arrays.",
+            "check_results": [item.model_dump(mode="json") for item in report.check_results],
         },
     }
     sanitized = _sanitize(payload)

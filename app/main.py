@@ -697,6 +697,8 @@ def _summary_from_row(scan: Row) -> ScanSummary:
         completed_at=scan["completed_at"],
         error_message=scan["error_message"],
         risk_score=risk_score,
+        risk_band=report.risk_band if report else None,
+        assessment_outcome=report.assessment_outcome if report else None,
         severity_counts=counts,
         report_pdf_available=bool(scan["report_pdf_path"]),
         report_json_available=bool(
@@ -838,33 +840,12 @@ def _update_scan_progress(scan_id: int, organization_id: int, percent: int, mess
         )
 
 
-def _staged_scan_progress(started: float, minimum_seconds: int, floor: int = 45, ceiling: int = 88) -> tuple[int, str]:
-    elapsed = max(0, time.monotonic() - started)
-    if minimum_seconds <= 0:
-        return floor, "Scanner worker is running the approved toolchain."
-    ratio = min(1.0, elapsed / minimum_seconds)
-    percent = min(ceiling, max(floor, floor + round((ceiling - floor) * ratio)))
-    stages = [
-        (0.12, "Stage 1/8: validating authorization, target type, and scanner policy."),
-        (0.24, "Stage 2/8: discovering DNS, subdomain, and external exposure signals."),
-        (0.36, "Stage 3/8: running network discovery, port checks, and service fingerprinting."),
-        (0.48, "Stage 4/8: reviewing TLS, certificates, HTTP headers, and web protections."),
-        (0.60, "Stage 5/8: crawling web/API surfaces and identifying technologies."),
-        (0.72, "Stage 6/8: correlating scanner evidence with known vulnerability patterns."),
-        (0.86, "Stage 7/8: prioritizing exploitability, business danger, and remediation urgency."),
-        (1.0, "Stage 8/8: completing AI-assisted triage and professional report preparation."),
-    ]
-    for limit, message in stages:
-        if ratio <= limit:
-            return percent, message
-    return percent, stages[-1][1]
-
-
 def _report_msp_details(user: Row) -> dict[str, str]:
     return {
-        "MSP organization": user["organization_name"],
+        "Company name": user["organization_name"],
+        "Company address": user["company_address"] or "",
+        "Contact phone": user["phone_number"] or "",
         "Verified account": user["email"],
-        "Verified account domain": user["email_domain"],
         "Report prepared by": user["email"],
         "User role": user["role"],
     }
@@ -873,8 +854,8 @@ def _report_msp_details(user: Row) -> dict[str, str]:
 def _report_owner_details(scan: Row, engagement: Row | None) -> dict[str, str]:
     if engagement:
         return {
-            "Owner / client name": engagement["client_name"],
-            "Owner / client address": engagement["company_address"] or "",
+            "Assessed organization": engagement["client_name"],
+            "Assessed organization address": engagement["company_address"] or "",
             "Primary contact": engagement["contact_name"] or "",
             "Contact email": engagement["contact_email"] or "",
             "Contact phone": engagement["contact_phone"] or "",
@@ -886,11 +867,10 @@ def _report_owner_details(scan: Row, engagement: Row | None) -> dict[str, str]:
             "Scope notes": engagement["scope_notes"],
         }
     return {
-        "Owner organization domain": scan["ownership_domain"],
         "Authorized target": scan["normalized_target"],
         "Original target request": scan["target"],
         "Asset type": scan["asset_type"],
-        "Authorization method": scan["authorization_method"],
+        "Authorization basis": scan["authorization_method"],
         "Verification note": scan["verification_note"] or "",
     }
 
@@ -949,9 +929,8 @@ def _enrich_report_for_scan(
             "Engagement intake and rules-of-engagement confirmation",
             f"Testing depth confirmed as {depth_label}; validation mode confirmed as {validation_label}",
             "Authorization, scope boundaries, and emergency stop conditions reviewed before active testing",
-            "Full-stack web, API, network, identity, and cloud-oriented review planning",
+            "Automated external discovery and evidence collection for the approved focus areas",
             *methodology,
-            "Manual tester evidence review, finding validation, and client-ready remediation mapping",
             "Retesting candidates identified for post-remediation verification",
         ]
         if testing_context.get("api_base_url"):
@@ -975,26 +954,37 @@ def _enrich_report_for_scan(
         limitations.append("KryptScan ethical pen-testing avoids destructive exploitation, brute force, persistence, and data exfiltration.")
         limitations.append("Findings marked potential or inconclusive require analyst validation before client enforcement or remediation closure.")
     executive_summary = report.executive_summary
+    analyst_review_status = report.analyst_review_status
+    assessment_outcome = report.assessment_outcome
     if mode == "ethical_pentesting":
         manual_count = sum(1 for item in report.findings if item.detected_by and "Manual analyst review" in item.detected_by)
+        if manual_count:
+            analyst_review_status = "EVIDENCE_ATTACHED"
+            methodology.append("Manual tester evidence supplied for selected findings; final report approval is not implied.")
+        else:
+            analyst_review_status = "NOT_PERFORMED"
+            methodology.append("Manual exploitability validation and analyst sign-off were not performed in this automated phase.")
+            if assessment_outcome == "COMPLETED":
+                assessment_outcome = "COMPLETED_WITH_LIMITATIONS"
         critical_high_count = report.severity_counts.critical + report.severity_counts.high
         issue_label = "issue" if critical_high_count == 1 else "issues"
         action_label = "requires" if critical_high_count == 1 else "require"
-        diagnostics_note = (
-            "Scanner diagnostics were separated from client vulnerabilities and should be reviewed before treating this assessment as exhaustive."
-            if report.assessment_coverage_status != "Complete"
-            else "Scanner diagnostics were separated from client vulnerabilities, and assessment coverage completed without material tool-health issues."
+        risk_statement = (
+            f"Observed automated risk is {report.risk_band} ({report.risk_score}/100)."
+            if report.risk_score is not None
+            else "Overall security risk is Undetermined - Insufficient Assessment Evidence."
         )
         executive_summary = (
-            f"Ethical Pen-Testing was completed for {scan['normalized_target']} under the approved rules of engagement.\n\n"
-            f"KryptScan identified a {report.risk_band} Risk posture with a score of {report.risk_score}/100. "
-            f"{critical_high_count} critical/high {issue_label} {action_label} priority review, and assessment coverage reached {report.assessment_coverage}%."
-            f"{' ' + str(manual_count) + ' analyst-confirmed manual finding(s) are included where tester evidence was supplied.' if manual_count else ''}\n\n"
-            f"{diagnostics_note}"
+            f"The automated discovery and safe-validation phase was performed for {scan['normalized_target']} under the submitted rules of engagement. "
+            f"Assessment outcome: {assessment_outcome}. {risk_statement} Successfully evaluated coverage was {report.assessment_coverage}%. "
+            f"{critical_high_count} critical/high {issue_label} {action_label} priority review. "
+            f"{'Manual evidence is attached to ' + str(manual_count) + ' finding(s), but final analyst approval is not recorded.' if manual_count else 'No manual exploitability validation or analyst sign-off is recorded; this must not be represented as a completed professional penetration test.'}"
         )
     return report.model_copy(
         update={
             "executive_summary": executive_summary,
+            "assessment_outcome": assessment_outcome,
+            "analyst_review_status": analyst_review_status,
             "scope_summary": scope_summary,
             "methodology": methodology,
             "limitations": limitations,
@@ -1096,7 +1086,7 @@ def _merge_manual_findings(report: AssessmentReport, target: str, rows: list[Row
         )
         for row in rows
     ]
-    merged = build_assessment_report(target, [*base_findings, *manual])
+    merged = build_assessment_report(target, [*base_findings, *manual], check_results=report.check_results)
     return merged.model_copy(
         update={
             "scan_protocols": report.scan_protocols,
@@ -1141,8 +1131,10 @@ def _store_completed_scan(
         delivered_json_path = None
         emailed_at = None
         email_error = None
-        persisted_report = _enrich_report_for_scan(scan_id, user, scan, report)
         completed_at = utcnow().isoformat()
+        persisted_report = _enrich_report_for_scan(scan_id, user, scan, report).model_copy(
+            update={"generated_at": completed_at}
+        )
         if create_pdf:
             completed_scan = dict(scan)
             completed_scan.update({"status": "completed", "completed_at": completed_at})
@@ -1186,7 +1178,6 @@ def _store_completed_scan(
 
 
 def _run_scan_job(scan_id: int, user_id: int) -> None:
-    job_started = time.monotonic()
     user = auth_service.get_user_by_id(user_id)
     if user is None:
         logger.warning("scan job abandoned scan_id=%s reason=user_not_found user_id=%s", scan_id, user_id)
@@ -1258,14 +1249,6 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
 
     if scheduled.report is not None:
         logger.info("scan worker returned immediate report scan_id=%s backend=%s", scan_id, scheduled.backend)
-        minimum_seconds = settings.scanner_min_full_scan_seconds if (scan["scan_tier"] or "full_scan") == "full_scan" else 0
-        elapsed = time.monotonic() - job_started
-        if minimum_seconds > 0 and elapsed < minimum_seconds:
-            while (time.monotonic() - job_started) < minimum_seconds:
-                percent, message = _staged_scan_progress(job_started, minimum_seconds, floor=70, ceiling=88)
-                _update_scan_progress(scan_id, user["organization_id"], percent, message)
-                remaining = minimum_seconds - (time.monotonic() - job_started)
-                time.sleep(max(1, min(20, round(remaining))))
         _update_scan_progress(scan_id, user["organization_id"], 90, "Scanner results received. Building professional report.")
         create_pdf = (scan["scan_tier"] or "full_scan") == "full_scan"
         _store_completed_scan(
@@ -1319,11 +1302,8 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
         scheduled.external_task_id,
         scheduled.status,
     )
-    minimum_seconds = settings.scanner_min_full_scan_seconds if (scan["scan_tier"] or "full_scan") == "full_scan" else 0
-    deadline = time.monotonic() + max(settings.scanner_worker_timeout_seconds, minimum_seconds + 120)
+    deadline = time.monotonic() + settings.scanner_worker_timeout_seconds
     while time.monotonic() < deadline:
-        percent, message = _staged_scan_progress(job_started, minimum_seconds)
-        _update_scan_progress(scan_id, user["organization_id"], percent, message)
         try:
             refreshed = provider.refresh(
                 scan["normalized_target"],
@@ -1349,13 +1329,15 @@ def _run_scan_job(scan_id: int, user_id: int) -> None:
                 _audit(connection, user, "scan.failed", {"scan_id": scan_id, "error": str(exc)})
             return
 
+        if refreshed.progress_percent is not None:
+            _update_scan_progress(
+                scan_id,
+                user["organization_id"],
+                min(89, max(45, int(refreshed.progress_percent))),
+                refreshed.message,
+            )
+
         if refreshed.report is not None:
-            if minimum_seconds > 0:
-                while (time.monotonic() - job_started) < minimum_seconds:
-                    percent, message = _staged_scan_progress(job_started, minimum_seconds)
-                    _update_scan_progress(scan_id, user["organization_id"], percent, message)
-                    remaining = minimum_seconds - (time.monotonic() - job_started)
-                    time.sleep(max(1, min(20, round(remaining))))
             _update_scan_progress(scan_id, user["organization_id"], 90, "Scanner results received. Building professional report.")
             _store_completed_scan(
                 scan_id=scan_id,
@@ -2257,7 +2239,7 @@ def admin_security_overview(user: Row = Depends(get_current_user)) -> dict:
             score = None
         if isinstance(score, (int, float)):
             risk_scores.append(float(score))
-    average_risk_score = round(sum(risk_scores) / len(risk_scores), 1) if risk_scores else 0
+    average_risk_score = round(sum(risk_scores) / len(risk_scores), 1) if risk_scores else None
     return {
         "users": {key: totals[key] or 0 for key in totals.keys()},
         "scans": {key: scan_totals[key] or 0 for key in scan_totals.keys()} | {"average_risk_score": average_risk_score},

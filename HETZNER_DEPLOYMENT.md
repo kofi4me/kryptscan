@@ -144,7 +144,7 @@ PAYMENT_REQUIRED=false
 OPENAI_API_KEY=<openai-api-key>
 SCANNER_BACKEND=worker
 SCANNER_WORKER_URL=http://kryptnet-scanner:8000
-SCANNER_MIN_FULL_SCAN_SECONDS=600
+SCANNER_MIN_FULL_SCAN_SECONDS=0
 ALLOW_PRIVATE_NETWORK_TARGETS=false
 ```
 
@@ -224,14 +224,14 @@ SCANNER_BACKEND=worker
 SCANNER_WORKER_URL=http://kryptnet-scanner:8000
 SCANNER_TOOL_TIMEOUT_SECONDS=300
 SCANNER_MAX_OUTPUT_CHARS=30000
-SCANNER_MIN_FULL_SCAN_SECONDS=600
+SCANNER_MIN_FULL_SCAN_SECONDS=0
 OPENAI_API_KEY=<openai-api-key>
 OPENAI_MODEL=gpt-5-mini
 OPENAI_BASE_URL=https://api.openai.com/v1
 CLOUD_CHECKS_ENABLED=false
 ```
 
-Set `SCANNER_MIN_FULL_SCAN_SECONDS=600` for a 10-minute professional scan window. Lower it only for development smoke tests.
+Keep `SCANNER_MIN_FULL_SCAN_SECONDS=0`. KryptScan reports actual scanner and report-generation time; artificial dwell periods are not used.
 
 If Scanner Health still shows missing tools after code updates, rebuild and restart the scanner worker:
 

@@ -75,7 +75,18 @@ class JsonReportTests(unittest.TestCase):
         scan, report = sample_report(penetration_test=True)
         payload = build_json_report(scan, report)
         self.assertEqual(payload["report_type"], "penetration_test")
-        self.assertTrue(payload["penetration_test"]["validated"])
+        self.assertFalse(payload["penetration_test"]["validated"])
+
+        manually_validated = report.model_copy(
+            update={
+                "analyst_review_status": "EVIDENCE_ATTACHED",
+                "findings": [
+                    report.findings[0].model_copy(update={"detected_by": ["Manual analyst review"]})
+                ],
+            }
+        )
+        validated_payload = build_json_report(scan, manually_validated)
+        self.assertTrue(validated_payload["penetration_test"]["validated"])
 
     def test_sensitive_evidence_is_redacted(self) -> None:
         scan, report = sample_report()

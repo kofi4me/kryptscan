@@ -4,9 +4,12 @@ from collections import Counter
 import re
 
 from app.models import (
+    AssessmentCheckResult,
     AssessmentReport,
     ChartDatum,
     ComplianceCheck,
+    CoverageCategory,
+    CoverageSummary,
     Finding,
     RemediationItem,
     SeverityCounts,
@@ -41,8 +44,6 @@ CONFIRMED_EVIDENCE_PATTERNS = [
     r"\bvulnerable\b",
     r"\bconfirmed\b",
     r"\bexploit(?:able|ed)?\b",
-    r"\bdetected\b",
-    r"\baffected\b",
 ]
 INCONCLUSIVE_TEST_NAMES = {"heartbleed", "robot"}
 FINAL_REPORT_STATUSES = {
@@ -56,6 +57,39 @@ FINAL_REPORT_STATUSES = {
     "ACCEPTED_RISK",
     "INFORMATIONAL",
 }
+RISK_MODEL_VERSION = "KS-RISK-2.0"
+EVALUATED_SECURITY_RESULTS = {"VULNERABLE", "NOT_VULNERABLE", "POTENTIAL"}
+FAILED_EXECUTION_STATUSES = {"FAILED", "TIMED_OUT"}
+INTERNAL_SERVICE_NAMES = {
+    "amass",
+    "checkov",
+    "dnsx",
+    "feroxbuster",
+    "ffuf",
+    "gitleaks",
+    "gobuster",
+    "grype",
+    "httpx",
+    "katana",
+    "kryptscan-orchestrator",
+    "kryptscan-roe",
+    "naabu",
+    "nikto",
+    "nmap",
+    "nuclei",
+    "openai",
+    "scanner-worker",
+    "semgrep",
+    "sslyze",
+    "subfinder",
+    "testssl.sh",
+    "trivy",
+    "wafw00f",
+    "whatweb",
+    "zap",
+    "zap-baseline.py",
+}
+ANSI_ESCAPE_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
 def severity_from_cvss(cvss: float) -> str:
@@ -70,7 +104,9 @@ def severity_from_cvss(cvss: float) -> str:
     return "info"
 
 
-def _risk_band(score: int) -> str:
+def _risk_band(score: int | None) -> str:
+    if score is None:
+        return "Undetermined"
     if score >= 80:
         return "Critical"
     if score >= 60:
@@ -94,6 +130,39 @@ def _tool_name(finding: Finding) -> str:
     if ":" in finding.title:
         return finding.title.split(":", 1)[0].strip()
     return finding.service or finding.category or "KryptScan"
+
+
+def _clean_text(value: str | None) -> str:
+    if not value:
+        return ""
+    return ANSI_ESCAPE_RE.sub("", value).replace("\x00", "").strip()
+
+
+def is_customer_facing_service(finding: Finding) -> bool:
+    service = (finding.service or "").strip().lower()
+    if not service or service in INTERNAL_SERVICE_NAMES:
+        return False
+    if finding.category in SCANNER_DIAGNOSTIC_CATEGORIES | {"AI Reporting", "Assessment Planning", "Rules of Engagement"}:
+        return False
+    return bool(finding.port) or service in {
+        "dns",
+        "domain",
+        "ftp",
+        "http",
+        "https",
+        "imap",
+        "ldap",
+        "mssql",
+        "mysql",
+        "pop3",
+        "postgresql",
+        "rdp",
+        "smb",
+        "smtp",
+        "ssh",
+        "telnet",
+        "tls",
+    }
 
 
 def _has_pattern(text: str, patterns: list[str]) -> bool:
@@ -138,9 +207,17 @@ def _service_remediation(finding: Finding) -> str:
 
 
 def _validated_finding(finding: Finding) -> Finding:
+    finding = finding.model_copy(
+        update={
+            "title": _clean_text(finding.title),
+            "description": _clean_text(finding.description),
+            "evidence": _clean_text(finding.evidence) or None,
+            "remediation": _clean_text(finding.remediation),
+        }
+    )
     text = " ".join(
         item
-        for item in [finding.title, finding.description, finding.evidence or "", finding.remediation]
+        for item in [finding.title, finding.description, finding.evidence or ""]
         if item
     )
     detected_by = finding.detected_by or [_tool_name(finding)]
@@ -274,23 +351,187 @@ def _integrity_diagnostics(findings: list[Finding]) -> list[ComplianceCheck]:
     return diagnostics
 
 
-def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentReport:
+def _coverage_from_checks(
+    check_results: list[AssessmentCheckResult],
+    *,
+    has_usable_evidence: bool,
+) -> tuple[CoverageSummary, list[CoverageCategory], int, str, str]:
+    if not check_results:
+        summary = CoverageSummary(
+            planned=1,
+            applicable=1,
+            executed=1 if has_usable_evidence else 0,
+            successfully_evaluated=1 if has_usable_evidence else 0,
+            inconclusive=0 if has_usable_evidence else 1,
+        )
+        coverage = 100 if has_usable_evidence else 0
+        status = "Complete" if has_usable_evidence else "Limited"
+        outcome = "COMPLETED" if has_usable_evidence else "INCONCLUSIVE"
+        return summary, [], coverage, status, outcome
+
+    applicable = [item for item in check_results if item.applicable]
+    executed = [item for item in applicable if item.execution_status in {"COMPLETED", "FAILED", "TIMED_OUT"}]
+    evaluated = [
+        item
+        for item in applicable
+        if item.execution_status == "COMPLETED" and item.security_result in EVALUATED_SECURITY_RESULTS
+    ]
+    failed = [item for item in applicable if item.execution_status == "FAILED"]
+    timed_out = [item for item in applicable if item.execution_status == "TIMED_OUT"]
+    skipped = [item for item in applicable if item.execution_status == "SKIPPED"]
+    inconclusive = [
+        item
+        for item in applicable
+        if item.security_result == "INCONCLUSIVE" or (
+            item.execution_status == "COMPLETED" and item.security_result not in EVALUATED_SECURITY_RESULTS
+        )
+    ]
+    summary = CoverageSummary(
+        planned=len(check_results),
+        applicable=len(applicable),
+        executed=len(executed),
+        successfully_evaluated=len(evaluated),
+        failed=len(failed),
+        timed_out=len(timed_out),
+        skipped=len(skipped),
+        not_applicable=len(check_results) - len(applicable),
+        inconclusive=len(inconclusive),
+    )
+    coverage = round((len(evaluated) / len(applicable)) * 100) if applicable else 0
+    if applicable and len(evaluated) == len(applicable) and not failed and not timed_out and not inconclusive:
+        status = "Complete"
+        outcome = "COMPLETED"
+    elif not applicable:
+        status = "Limited"
+        outcome = "INCONCLUSIVE"
+    elif not evaluated:
+        status = "Limited"
+        outcome = (
+            "FAILED"
+            if all(item.execution_status in FAILED_EXECUTION_STATUSES for item in applicable)
+            else "CANCELLED"
+            if all(item.execution_status == "CANCELLED" for item in applicable)
+            else "INCONCLUSIVE"
+        )
+    elif coverage >= 80:
+        status = "Substantial"
+        outcome = "COMPLETED_WITH_LIMITATIONS"
+    else:
+        status = "Partial" if coverage >= 50 else "Limited"
+        outcome = "PARTIAL"
+
+    grouped: dict[str, list[AssessmentCheckResult]] = {}
+    for item in check_results:
+        grouped.setdefault(item.category, []).append(item)
+    categories: list[CoverageCategory] = []
+    for category, items in grouped.items():
+        category_applicable = [item for item in items if item.applicable]
+        category_evaluated = [
+            item
+            for item in category_applicable
+            if item.execution_status == "COMPLETED" and item.security_result in EVALUATED_SECURITY_RESULTS
+        ]
+        if not category_applicable:
+            category_status = "NOT_APPLICABLE"
+        elif len(category_evaluated) == len(category_applicable):
+            category_status = "COMPLETED"
+        elif category_evaluated:
+            category_status = "PARTIAL"
+        elif all(item.execution_status in FAILED_EXECUTION_STATUSES for item in category_applicable):
+            category_status = "FAILED"
+        else:
+            category_status = "INCONCLUSIVE"
+        unresolved = [
+            f"{item.name}: {item.execution_status}/{item.security_result}"
+            for item in category_applicable
+            if item not in category_evaluated
+        ]
+        reason = "; ".join(unresolved[:4]) or f"{len(category_evaluated)} applicable check(s) produced usable evidence."
+        categories.append(CoverageCategory(name=category, status=category_status, reason=reason))
+    return summary, categories, coverage, status, outcome
+
+
+def _risk_score(
+    actionable_findings: list[Finding],
+    counts: SeverityCounts,
+    coverage: CoverageSummary,
+    assessment_coverage: int,
+) -> int | None:
+    confirmed = [item for item in actionable_findings if item.validation_status in {"CONFIRMED", "LIKELY"}]
+    evidence_sufficient = (
+        coverage.applicable > 0
+        and assessment_coverage >= 85
+        and coverage.failed == 0
+        and coverage.timed_out == 0
+        and coverage.inconclusive <= max(1, round(coverage.applicable * 0.1))
+    )
+    if not actionable_findings:
+        return 5 if evidence_sufficient else None
+    if not confirmed and not evidence_sufficient:
+        return None
+
+    weighted_total = sum(
+        SEVERITY_WEIGHTS[item.severity] * max(item.confidence, 1) / 100
+        for item in actionable_findings
+    )
+    critical_high_pressure = counts.critical * 12 + counts.high * 7
+    medium_pressure = min(counts.medium * 3, 18)
+    low_pressure = min(counts.low, 6)
+    average_weight = weighted_total / max(len(actionable_findings), 1)
+    score = round((average_weight * 8) + critical_high_pressure + medium_pressure + low_pressure)
+    severity_floor = (
+        80
+        if counts.critical
+        else 60
+        if counts.high
+        else 35
+        if counts.medium
+        else 15
+        if counts.low
+        else 5
+    )
+    return min(100, max(severity_floor, score))
+
+
+def build_assessment_report(
+    target: str,
+    findings: list[Finding],
+    check_results: list[AssessmentCheckResult] | None = None,
+) -> AssessmentReport:
+    check_results = check_results or []
     findings = _deduplicate_findings([_validated_finding(item) for item in findings])
     findings = sorted(
         findings,
         key=lambda item: (SEVERITY_WEIGHTS[item.severity], item.confidence, item.cvss),
         reverse=True,
     )
-    scanner_diagnostics = [
+    finding_diagnostics = [
         ComplianceCheck(name=item.title, status="fail", detail=item.description)
         for item in findings
         if item.finding_type == "SCANNER_ERROR"
     ]
-    diagnostics = [*scanner_diagnostics, *_integrity_diagnostics(findings)]
+    check_diagnostics = [
+        ComplianceCheck(
+            name=item.name,
+            status="fail" if item.execution_status in FAILED_EXECUTION_STATUSES else "warn",
+            detail=(
+                f"Execution: {item.execution_status}. Security result: {item.security_result}. "
+                f"{_clean_text(item.detail) or 'No additional diagnostic detail was returned.'}"
+            ),
+        )
+        for item in check_results
+        if item.applicable
+        and (
+            item.execution_status in FAILED_EXECUTION_STATUSES
+            or item.security_result in {"INCONCLUSIVE", "NOT_TESTED"}
+        )
+    ]
+    diagnostics = [*check_diagnostics, *finding_diagnostics, *_integrity_diagnostics(findings)]
     reportable_findings = [
         item
         for item in findings
-        if item.finding_type != "SCANNER_ERROR"
+        if item.finding_type not in {"SCANNER_ERROR", "ASSESSMENT_NOTE", "CHECK_RESULT"}
+        and item.category not in {"Assessment Planning", "Rules of Engagement", "AI Reporting"}
     ]
     actionable_findings = [
         item
@@ -306,18 +547,21 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
         if item.severity == "info" or item.finding_type in {"OBSERVATION", "INFORMATIONAL"}
     )
     counts = _serialize_counts(severity_counter)
-    weighted_total = sum(SEVERITY_WEIGHTS[item.severity] * max(item.confidence, 1) / 100 for item in actionable_findings)
-    critical_high_pressure = counts.critical * 12 + counts.high * 7
-    medium_pressure = min(counts.medium * 3, 18)
-    low_pressure = min(counts.low, 6)
-    average_weight = weighted_total / max(len(actionable_findings), 1)
-    risk_score = min(100, round((average_weight * 8) + critical_high_pressure + medium_pressure + low_pressure))
-    service_counter = Counter(item.service or "unknown" for item in reportable_findings)
-    category_counter = Counter(item.category for item in reportable_findings)
-    expected_components = 9
-    completed_components = max(0, expected_components - len(scanner_diagnostics))
-    assessment_coverage = round((completed_components / expected_components) * 100)
-    coverage_status = "Complete" if assessment_coverage >= 90 else "Partial" if assessment_coverage >= 55 else "Limited"
+    coverage_summary, coverage_categories, assessment_coverage, coverage_status, assessment_outcome = _coverage_from_checks(
+        check_results,
+        has_usable_evidence=bool(reportable_findings),
+    )
+    risk_score = _risk_score(actionable_findings, counts, coverage_summary, assessment_coverage)
+    service_counter = Counter(
+        item.service
+        for item in reportable_findings
+        if item.service and is_customer_facing_service(item)
+    )
+    category_counter = Counter(
+        item.category
+        for item in reportable_findings
+        if item.category not in {"Passed Security Test", "Assessment Limitation"}
+    )
 
     top_services = [
         ChartDatum(label=label, value=value)
@@ -330,30 +574,41 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
 
     compliance_checks = [
         ComplianceCheck(
-            name="Critical findings contained",
-            status="fail" if counts.critical else "pass",
+            name="Critical finding status",
+            status="fail" if counts.critical else "pass" if risk_score is not None else "warn",
             detail=(
                 f"{counts.critical} critical issue(s) require immediate action."
                 if counts.critical
-                else "No critical issues were observed in this assessment."
+                else "No critical issue was confirmed in the usable evidence."
+                if risk_score is not None
+                else "No critical issue was confirmed, but assessment evidence is insufficient to claim absence."
             ),
         ),
         ComplianceCheck(
-            name="High-risk exposure backlog",
-            status="fail" if counts.high else "pass",
+            name="High-severity finding status",
+            status="fail" if counts.high else "pass" if risk_score is not None else "warn",
             detail=(
                 f"{counts.high} high-severity issue(s) need rapid triage."
                 if counts.high
-                else "High-severity backlog is currently controlled."
+                else "No high-severity issue was confirmed in the usable evidence."
+                if risk_score is not None
+                else "No high-severity issue was confirmed, but incomplete coverage prevents a clean assurance statement."
             ),
         ),
         ComplianceCheck(
             name="Externally reachable service hygiene",
-            status="warn" if any(item.service in {"http", "https", "ssh", "rdp"} for item in reportable_findings) else "pass",
+            status=(
+                "warn"
+                if any(item.service in {"http", "https", "ssh", "rdp"} for item in reportable_findings)
+                or risk_score is None
+                else "pass"
+            ),
             detail=(
                 "Public-facing services were included in the findings set and should be reviewed first."
                 if any(item.service in {"http", "https", "ssh", "rdp"} for item in reportable_findings)
-                else "No elevated public-facing service concentration detected in findings."
+                else "Service exposure could not be established with sufficient confidence."
+                if risk_score is None
+                else "No elevated public-facing service concentration was observed in the completed checks."
             ),
         ),
         ComplianceCheck(
@@ -369,9 +624,7 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
 
     remediation_plan: list[RemediationItem] = []
     seen_titles: set[str] = set()
-    for finding in reportable_findings or findings:
-        if finding.category in {"Scanner Toolchain", "AI Reporting", "Assessment Quality"}:
-            continue
+    for finding in actionable_findings:
         if finding.title in seen_titles:
             continue
         seen_titles.add(finding.title)
@@ -386,46 +639,62 @@ def build_assessment_report(target: str, findings: list[Finding]) -> AssessmentR
         if len(remediation_plan) == 5:
             break
 
-    trend = [
-        TrendPoint(label="Week -3", value=max(risk_score - 14, 10)),
-        TrendPoint(label="Week -2", value=max(risk_score - 8, 8)),
-        TrendPoint(label="Week -1", value=max(risk_score - 4, 5)),
-        TrendPoint(label="Current", value=risk_score),
-    ]
+    trend = [TrendPoint(label="Current", value=risk_score)] if risk_score is not None else []
 
     band = _risk_band(risk_score)
-    if coverage_status != "Complete":
+    if risk_score is None:
         summary = (
-            f"{target} is currently rated {band.lower()} risk based on a {coverage_status.lower()} external assessment "
-            f"with {assessment_coverage}% tool coverage. KryptScan identified {counts.critical} confirmed or potential "
-            f"critical, {counts.high} high, and {counts.medium} medium vulnerability findings. Scanner diagnostics "
-            "should be reviewed before treating this as a complete representation of the target security posture."
+            f"Overall security risk for {target} is undetermined because the assessment produced insufficient usable "
+            f"evidence. Outcome: {assessment_outcome}. Successfully evaluated coverage was {assessment_coverage}% "
+            f"({coverage_summary.successfully_evaluated} of {coverage_summary.applicable} applicable checks). "
+            f"The available evidence contains {counts.critical} critical, {counts.high} high, and {counts.medium} "
+            "medium confirmed or potential findings, but incomplete or inconclusive checks prevent a defensible "
+            "overall security rating."
+        )
+    elif coverage_status != "Complete":
+        summary = (
+            f"Observed risk for {target} is {band.lower()} ({risk_score}/100) based on the usable evidence collected. "
+            f"Outcome: {assessment_outcome}; successfully evaluated coverage was {assessment_coverage}%. "
+            f"KryptScan identified {counts.critical} critical, {counts.high} high, and {counts.medium} medium confirmed "
+            "or potential findings. This provisional rating is not proof of the target's complete security posture."
         )
     else:
         summary = (
-            f"{target} is currently rated {band.lower()} risk with {counts.critical} confirmed or potential critical, "
+            f"{target} has an observed {band.lower()} risk rating ({risk_score}/100) with {counts.critical} confirmed or potential critical, "
             f"{counts.high} high, and {counts.medium} medium vulnerability findings. Priority should go to externally "
-            "exposed services and vulnerabilities with clear evidence, high confidence, and a practical remediation path."
+            "exposed services and findings with clear evidence, high confidence, and a practical remediation path. "
+            "A low observed finding count does not guarantee the absence of vulnerabilities."
+        )
+
+    limitations = [
+        "Results reflect only the reachable services and evidence available during the assessment window.",
+        "Authenticated application, cloud, identity, and business-logic testing require client-provided access and explicit approval.",
+    ]
+    if assessment_outcome != "COMPLETED":
+        limitations.append(
+            f"The assessment outcome was {assessment_outcome}; failed, timed-out, filtered, or inconclusive checks reduce assurance."
         )
 
     return AssessmentReport(
         executive_summary=summary,
         risk_score=risk_score,
         risk_band=band,
+        risk_model_version=RISK_MODEL_VERSION,
+        assessment_outcome=assessment_outcome,
         assessment_coverage=assessment_coverage,
         assessment_coverage_status=coverage_status,
+        coverage_summary=coverage_summary,
+        coverage_categories=coverage_categories,
+        check_results=check_results,
         severity_counts=counts,
         scope_summary=f"Assessment scope was limited to {target} and evidence collected during the approved workflow.",
         methodology=[
             "Authorized target validation",
             "Scanner evidence normalization",
             "Severity scoring and remediation prioritization",
-            "Analyst review of technical findings",
+            "Automated evidence-quality and consistency checks",
         ],
-        limitations=[
-            "Results reflect the reachable services and evidence available at assessment time.",
-            "Authenticated application, cloud, identity, and business logic testing require client-provided access and explicit approval.",
-        ],
+        limitations=limitations,
         scan_protocols=[],
         diagnostics=diagnostics,
         findings=reportable_findings,

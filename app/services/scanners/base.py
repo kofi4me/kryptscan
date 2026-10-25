@@ -13,6 +13,7 @@ class ScheduledScan:
     external_task_id: str | None = None
     external_report_id: str | None = None
     report: AssessmentReport | None = None
+    progress_percent: int | None = None
 
 
 @dataclass
@@ -20,3 +21,4 @@ class RefreshedScan:
     status: str
     message: str
     report: AssessmentReport | None = None
+    progress_percent: int | None = None

@@ -23,7 +23,8 @@
         "started_at": {"type": ["string", "null"]}, "completed_at": {"type": ["string", "null"]},
         "duration_seconds": {"type": ["integer", "null"], "minimum": 0}, "profile": {"type": ["string", "null"]},
         "scope": {"type": "string"}, "methodology": {"type": "array", "items": {"type": "string"}},
-        "authenticated": {"type": ["boolean", "null"]}, "configuration_profile": {"type": ["string", "null"]}
+        "authenticated": {"type": ["boolean", "null"]}, "configuration_profile": {"type": ["string", "null"]},
+        "assessment_outcome": {"type": "string"}
       },
       "additionalProperties": false
     },

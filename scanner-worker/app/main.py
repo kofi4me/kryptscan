@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from app.models import Finding
+from app.models import AssessmentCheckResult, Finding
 from app.services.reporting import build_assessment_report
 
 
@@ -28,17 +28,22 @@ WORKER_TOKEN = os.getenv("SCANNER_WORKER_TOKEN", "")
 ALLOW_PRIVATE_TARGETS = os.getenv("ALLOW_PRIVATE_NETWORK_TARGETS", "false").lower() in {"1", "true", "yes"}
 MAX_TOOL_TIMEOUT = int(os.getenv("SCANNER_TOOL_TIMEOUT_SECONDS", "180"))
 MAX_OUTPUT_CHARS = int(os.getenv("SCANNER_MAX_OUTPUT_CHARS", "20000"))
-MIN_FULL_SCAN_SECONDS = int(os.getenv("SCANNER_MIN_FULL_SCAN_SECONDS", "600"))
+MIN_FULL_SCAN_SECONDS = 0
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
+OPENAI_MAX_RETRIES = max(0, int(os.getenv("OPENAI_MAX_RETRIES", "3")))
 CLOUD_CHECKS_ENABLED = os.getenv("CLOUD_CHECKS_ENABLED", "false").lower() in {"1", "true", "yes"}
 WEB_DISCOVERY_WORDLIST = os.getenv("WEB_DISCOVERY_WORDLIST", "/opt/kryptscan/wordlists/web-content.txt")
 WEB_DISCOVERY_RATE_LIMIT = os.getenv("WEB_DISCOVERY_RATE_LIMIT", "10")
+NUCLEI_TEMPLATES_DIR = os.getenv("NUCLEI_TEMPLATES_DIR", "/root/nuclei-templates")
 
 app = FastAPI(title="KryptScan Scanner Worker")
 JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
+AI_CACHE: dict[str, str] = {}
+AI_CACHE_LOCK = threading.Lock()
+ANSI_ESCAPE_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
 class ScanRequest(BaseModel):
@@ -121,6 +126,25 @@ def _zap_baseline_path() -> str | None:
     return None
 
 
+def _clean_output(value: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", value).replace("\x00", "").strip()
+
+
+def _preflight_error(tool: str, command: list[str]) -> str | None:
+    executable = command[0]
+    if executable == "zap-baseline.py" and _zap_baseline_path():
+        executable = _zap_baseline_path() or executable
+    if not shutil.which(executable) and not Path(executable).exists():
+        return f"{tool} is not installed in the scanner worker image."
+    if tool.lower() == "testssl.sh" and not shutil.which("ps"):
+        return "testssl.sh dependency check failed: the ps utility is unavailable. Install the procps package."
+    if tool.lower() == "nuclei":
+        templates = Path(NUCLEI_TEMPLATES_DIR)
+        if not templates.exists() or not any(templates.rglob("*.yaml")):
+            return f"Nuclei template preflight failed: no templates were found in {NUCLEI_TEMPLATES_DIR}."
+    return None
+
+
 def _run(command: list[str], output_dir: Path, timeout: int = MAX_TOOL_TIMEOUT) -> tuple[bool, str]:
     tool = command[0]
     if tool == "zap-baseline.py" and not shutil.which(tool):
@@ -138,7 +162,7 @@ def _run(command: list[str], output_dir: Path, timeout: int = MAX_TOOL_TIMEOUT) 
             timeout=timeout,
             check=False,
         )
-        output = "\n".join(part for part in [result.stdout, result.stderr] if part)
+        output = _clean_output("\n".join(part for part in [result.stdout, result.stderr] if part))
         return _tool_output_is_usable(tool, result.returncode, output), output[:MAX_OUTPUT_CHARS]
     except subprocess.TimeoutExpired:
         return False, f"{tool} timed out after {timeout} seconds."
@@ -153,7 +177,13 @@ def _tool_output_is_usable(tool: str, returncode: int, output: str) -> bool:
         "failed to resolve",
         "no targets were specified",
         "connection refused",
+        "could not connect",
+        "connectivity testing failed",
+        "discarding scan command",
+        "network is unreachable",
+        "no route to host",
         "timed out after",
+        "connection timed out",
         "is not installed",
         "required module not found",
     ]
@@ -190,15 +220,57 @@ def _finding(
 
 
 def _tool_finding(target: str, tool: str, succeeded: bool, detail: str, category: str) -> Finding:
-    return _finding(
+    finding = _finding(
         target,
         f"{tool} {'completed' if succeeded else 'incomplete'}",
         "info",
-        category if succeeded else "Scanner Toolchain",
+        "Tool Execution" if succeeded else "Scanner Toolchain",
         tool.lower(),
         detail,
         "Review raw output and parsed findings." if succeeded else f"Repair or tune {tool} in the scanner worker image before relying on this stage.",
     )
+    return finding.model_copy(
+        update={
+            "finding_type": "CHECK_RESULT" if succeeded else "SCANNER_ERROR",
+            "validation_status": "INFORMATIONAL" if succeeded else "SCANNER_ERROR",
+            "confidence": 100,
+            "detected_by": [tool],
+        }
+    )
+
+
+def _stage_security_result(
+    tool: str,
+    execution_status: str,
+    output: str,
+    parsed_findings: list[Finding],
+) -> str:
+    if execution_status != "COMPLETED":
+        return "INCONCLUSIVE"
+    actionable = [item for item in parsed_findings if item.severity in {"critical", "high", "medium", "low"}]
+    if actionable:
+        if any(item.validation_status in {"CONFIRMED", "LIKELY"} for item in actionable):
+            return "VULNERABLE"
+        return "POTENTIAL"
+
+    lower = output.lower()
+    inconclusive_markers = [
+        "all 100 scanned ports",
+        "all 1000 scanned ports",
+        "filtered because",
+        "host seems down",
+        "could not connect",
+        "connectivity testing failed",
+        "discarding scan command",
+        "connection timed out",
+        "network is unreachable",
+        "no route to host",
+    ]
+    if any(marker in lower for marker in inconclusive_markers):
+        return "INCONCLUSIVE"
+    if not output.strip() and tool.lower() not in {"nuclei", "feroxbuster", "ffuf", "gobuster"}:
+        return "INCONCLUSIVE"
+    return "NOT_VULNERABLE"
 
 
 def _parse_tool_findings(target: str, tool: str, output: str, category: str) -> list[Finding]:
@@ -276,6 +348,14 @@ def _parse_nmap_findings(target: str, tool: str, output: str, category: str) -> 
                     "https" if "ssl" in normalized_service or port == "443" else "http",
                     line,
                     "Confirm the service is intentional, patched, monitored, and protected by appropriate web security controls.",
+                ).model_copy(
+                    update={
+                        "port": f"{port}/{proto.lower()}",
+                        "finding_type": "OBSERVATION",
+                        "validation_status": "INFORMATIONAL",
+                        "confidence": 95,
+                        "detected_by": [tool],
+                    }
                 )
             )
             continue
@@ -293,6 +373,14 @@ def _parse_nmap_findings(target: str, tool: str, output: str, category: str) -> 
                 line,
                 f"Restrict {service} exposure to approved source networks, validate patch level, and disable it if not business-required.",
                 cvss,
+            ).model_copy(
+                update={
+                    "port": f"{port}/{proto.lower()}",
+                    "finding_type": "EXPOSURE",
+                    "validation_status": "CONFIRMED",
+                    "confidence": 95,
+                    "detected_by": [tool],
+                }
             )
         )
     return findings[:20]
@@ -396,6 +484,8 @@ def _parse_tls_findings(target: str, tool: str, output: str, category: str) -> l
     for marker, severity, cvss, title in checks:
         if marker in lower:
             evidence = next((line.strip() for line in output.splitlines() if marker in line.lower()), output[:500])
+            if re.search(r"\b(not vulnerable|not affected|no vulnerability|false|safe|ok)\b", evidence, re.I):
+                continue
             findings.append(
                 _finding(
                     target,
@@ -527,6 +617,13 @@ def _ai_triage_finding(target: str, findings: list[Finding]) -> Finding:
             "openai",
             "OPENAI_API_KEY is not configured in the scanner worker environment.",
             "Add OPENAI_API_KEY, OPENAI_MODEL, and OPENAI_BASE_URL to the scanner worker environment to enable AI-assisted explanations.",
+        ).model_copy(
+            update={
+                "finding_type": "SCANNER_ERROR",
+                "validation_status": "SCANNER_ERROR",
+                "confidence": 100,
+                "detected_by": ["OpenAI Responses API"],
+            }
         )
     evidence_items = [
         {
@@ -552,9 +649,16 @@ def _ai_triage_finding(target: str, findings: list[Finding]) -> Finding:
             "or instructions for unauthorized access."
         ),
     }
-    request = urllib.request.Request(
-        f"{OPENAI_BASE_URL.rstrip('/')}/responses",
-        data=json.dumps(
+    cache_key = hashlib.sha256(
+        json.dumps({"model": OPENAI_MODEL, "prompt": prompt}, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    with AI_CACHE_LOCK:
+        cached_text = AI_CACHE.get(cache_key)
+
+    error_detail = "AI triage did not return a usable response."
+    text = cached_text
+    if text is None:
+        request_body = json.dumps(
             {
                 "model": OPENAI_MODEL,
                 "instructions": (
@@ -564,27 +668,63 @@ def _ai_triage_finding(target: str, findings: list[Finding]) -> Finding:
                 ),
                 "input": json.dumps(prompt),
             }
-        ).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (OSError, ValueError, urllib.error.URLError) as exc:
+        ).encode("utf-8")
+        for attempt in range(OPENAI_MAX_RETRIES + 1):
+            request = urllib.request.Request(
+                f"{OPENAI_BASE_URL.rstrip('/')}/responses",
+                data=request_body,
+                headers={
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=60) as response:
+                    response_payload = json.loads(response.read().decode("utf-8"))
+                text = _extract_openai_text(response_payload).strip()
+                if text:
+                    with AI_CACHE_LOCK:
+                        if len(AI_CACHE) >= 256:
+                            AI_CACHE.pop(next(iter(AI_CACHE)))
+                        AI_CACHE[cache_key] = text
+                    break
+                error_detail = "AI triage completed but returned no narrative text."
+                break
+            except urllib.error.HTTPError as exc:
+                error_detail = f"OpenAI API returned HTTP {exc.code}."
+                retryable = exc.code == 429 or 500 <= exc.code < 600
+                if not retryable or attempt >= OPENAI_MAX_RETRIES:
+                    break
+                retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                try:
+                    delay = min(8.0, max(1.0, float(retry_after))) if retry_after else min(8.0, 2 ** attempt)
+                except ValueError:
+                    delay = min(8.0, 2 ** attempt)
+                time.sleep(delay)
+            except (OSError, ValueError, urllib.error.URLError) as exc:
+                error_detail = f"AI triage request failed: {type(exc).__name__}."
+                if attempt >= OPENAI_MAX_RETRIES:
+                    break
+                time.sleep(min(8.0, 2 ** attempt))
+
+    if not text:
         return _finding(
             target,
-            "AI triage API error",
+            "AI triage unavailable",
             "info",
             "AI Reporting",
             "openai",
-            str(exc),
-            "Verify the OpenAI API key, model, base URL, and outbound HTTPS access from the scanner worker.",
+            error_detail,
+            "The deterministic assessment remains valid. Review API quota, rate limits, model access, and outbound HTTPS before retrying AI-assisted narrative generation.",
+        ).model_copy(
+            update={
+                "finding_type": "SCANNER_ERROR",
+                "validation_status": "SCANNER_ERROR",
+                "confidence": 100,
+                "detected_by": ["OpenAI Responses API"],
+            }
         )
-    text = _extract_openai_text(payload) or "AI triage completed but no narrative text was returned."
     return _finding(
         target,
         "AI-assisted risk explanation and remediation priorities",
@@ -593,6 +733,13 @@ def _ai_triage_finding(target: str, findings: list[Finding]) -> Finding:
         "openai",
         text,
         "Use the AI-assisted narrative to brief business owners, then validate and approve final wording before client delivery.",
+    ).model_copy(
+        update={
+            "finding_type": "ASSESSMENT_NOTE",
+            "validation_status": "INFORMATIONAL",
+            "confidence": 70,
+            "detected_by": ["OpenAI Responses API"],
+        }
     )
 
 
@@ -827,27 +974,10 @@ def _set_job_status(job_id: str | None, **updates: object) -> None:
 
 
 def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
-    started = time.monotonic()
     target = _validate_target(payload.target)
     findings: list[Finding] = []
-    stage_results: list[str] = []
+    check_results: list[AssessmentCheckResult] = []
     plan = list(_tool_plan(target, payload))
-    findings.extend(_pentest_context_findings(target, payload))
-    findings.append(
-        _finding(
-            target,
-            "KryptScan v2 orchestrated test plan generated",
-            "info",
-            "Assessment Planning",
-            "kryptscan-orchestrator",
-            (
-                f"Target profiling selected {len(plan)} safe scanner stage(s) for asset type "
-                f"{payload.asset_type} and assessment mode {payload.assessment_mode}. "
-                f"Planned engines: {', '.join(tool for tool, _, _ in plan)}."
-            ),
-            "Review scanner diagnostics and findings to confirm every planned stage completed successfully before treating coverage as exhaustive.",
-        )
-    )
     _set_job_status(
         job_id,
         status="running",
@@ -866,13 +996,41 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
                 progress_percent=progress,
                 message=f"Running {tool} checks for {category.lower()}.",
             )
+            preflight_error = _preflight_error(tool, command)
             stage_started = time.monotonic()
-            ok, output = _run(command, output_dir)
+            if preflight_error:
+                ok, output = False, preflight_error
+            else:
+                ok, output = _run(command, output_dir)
             elapsed = round(time.monotonic() - stage_started, 1)
-            stage_results.append(f"{tool}: {'completed' if ok else 'incomplete'} in {elapsed}s")
-            findings.append(_tool_finding(target, tool, ok, output, category))
-            if ok:
-                findings.extend(_parse_tool_findings(target, tool, output, category))
+            execution_status = (
+                "COMPLETED"
+                if ok
+                else "TIMED_OUT"
+                if "timed out after" in output.lower()
+                else "FAILED"
+            )
+            parsed_findings = _parse_tool_findings(target, tool, output, category) if ok else []
+            findings.extend(parsed_findings)
+            if not ok:
+                findings.append(_tool_finding(target, tool, False, output, category))
+            security_result = _stage_security_result(tool, execution_status, output, parsed_findings)
+            detail = (
+                "Check completed and produced usable security evidence."
+                if security_result in {"VULNERABLE", "NOT_VULNERABLE", "POTENTIAL"}
+                else (_clean_output(output)[:600] or "The check did not produce enough evidence for a security conclusion.")
+            )
+            check_results.append(
+                AssessmentCheckResult(
+                    name=tool,
+                    category=category,
+                    execution_status=execution_status,
+                    security_result=security_result,
+                    applicable=True,
+                    elapsed_seconds=elapsed,
+                    detail=detail,
+                )
+            )
 
     _set_job_status(
         job_id,
@@ -881,42 +1039,13 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
         message="Normalizing scanner output and preparing AI-assisted triage.",
     )
     findings.append(_ai_triage_finding(target, findings))
-    elapsed = time.monotonic() - started
-    minimum_seconds = MIN_FULL_SCAN_SECONDS if payload.scan_tier == "full_scan" else 0
-    if minimum_seconds > 0 and elapsed < minimum_seconds:
-        remaining = round(minimum_seconds - elapsed)
-        findings.append(
-            _finding(
-                target,
-                "Professional scan dwell time enforced",
-                "info",
-                "Assessment Quality",
-                "scanner-worker",
-                (
-                    f"Tool execution completed in {round(elapsed, 1)} seconds. KryptScan held the scan window "
-                    f"for an additional {remaining} seconds to support staged progress tracking, report review, "
-                    "and a non-instant full assessment workflow."
-                ),
-                "Use the staged window to review progress indicators and avoid treating a full assessment as a shallow instant check.",
-            )
-        )
-        _set_job_status(
-            job_id,
-            status="running",
-            progress_percent=88,
-            message="Tool evidence collected. Completing the professional review window before final report generation.",
-        )
-        time.sleep(remaining)
     _set_job_status(
         job_id,
         status="running",
         progress_percent=94,
         message="Building the final report, graphs, risk metrics, and remediation priorities.",
     )
-    report = build_assessment_report(target, findings)
-    completed_stages = sum(1 for item in stage_results if ": completed" in item)
-    assessment_coverage = round((completed_stages / max(len(plan), 1)) * 100)
-    coverage_status = "Complete" if assessment_coverage >= 90 else "Partial" if assessment_coverage >= 55 else "Limited"
+    report = build_assessment_report(target, findings, check_results=check_results)
     mode_label = "Ethical Pen-Testing" if payload.assessment_mode == "ethical_pentesting" else "Vulnerability Assessment"
     service_level = _context_text(payload, "service_level").lower() or "standard"
     pen_test_protocols = []
@@ -925,7 +1054,7 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
             "Ethical pen-test ROE context attached to scanner job",
             "External attack surface, DNS, web, API, TLS, WAF, crawling, and known-vulnerability checks attempted",
             "Authenticated testing context documented without storing credentials or secrets",
-            "Manual exploit validation remains controlled, non-destructive, and evidence-driven",
+            "Automated discovery does not imply manual exploit validation or analyst sign-off",
         ]
         if _context_text(payload, "api_base_url"):
             pen_test_protocols.append("API base URL included in HTTP probing, crawling, and template checks")
@@ -936,16 +1065,13 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
             "scan_protocols": [
                 *payload.scan_protocols,
                 *pen_test_protocols,
-                f"Target profiling selected {len(plan)} scanner stage(s) based on target type, authorization, and assessment profile",
-                "Scanner worker executed the containerized safe tool profile",
-                *stage_results,
+                f"Target profiling selected {len(plan)} applicable automated checks based on target type, authorization, and assessment profile",
+                "Execution status and security result were recorded separately for every applicable check",
                 "Private/reserved target policy enforced before tool execution",
                 "AI triage attempted for business danger and remediation explanation",
                 "Tool output normalized into KryptScan reporting schema",
             ],
             "scope_summary": f"{mode_label} worker scan for {target}. Service level: {service_level}. Tier: {payload.scan_tier}.",
-            "assessment_coverage": assessment_coverage,
-            "assessment_coverage_status": coverage_status,
         }
     )
     return report.model_dump(mode="json")
@@ -1009,6 +1135,10 @@ def health() -> dict:
     except Exception:
         python_gvm_available = False
     available_tools = {tool: bool(shutil.which(tool)) for tool in tools}
+    available_tools["ps"] = bool(shutil.which("ps"))
+    nuclei_templates_ready = Path(NUCLEI_TEMPLATES_DIR).exists() and any(
+        Path(NUCLEI_TEMPLATES_DIR).rglob("*.yaml")
+    )
     available_tools["zap-baseline.py"] = bool(_zap_baseline_path())
     scoutsuite_available = bool(shutil.which("ScoutSuite") or shutil.which("scoutsuite") or shutil.which("scout"))
     available_tools["ScoutSuite"] = scoutsuite_available
@@ -1022,9 +1152,14 @@ def health() -> dict:
         }
     )
     return {
-        "status": "ok",
+        "status": "ok" if available_tools.get("ps") and nuclei_templates_ready else "degraded",
         "time": datetime.now(timezone.utc).isoformat(),
         "min_full_scan_seconds": MIN_FULL_SCAN_SECONDS,
+        "preflight": {
+            "testssl_dependencies_ready": bool(available_tools.get("testssl.sh") and available_tools.get("ps")),
+            "nuclei_templates_ready": nuclei_templates_ready,
+            "artificial_scan_delay_enabled": False,
+        },
         "available_tools": available_tools,
     }
 

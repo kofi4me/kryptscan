@@ -5,13 +5,14 @@ import re
 from typing import Iterable
 
 from app.models import AssessmentReport, Finding
+from app.services.reporting import is_customer_facing_service
 
 
 PAGE_WIDTH = 612
 PAGE_HEIGHT = 792
 LEFT_MARGIN = 48
 RIGHT_MARGIN = 48
-TOP_MARGIN = 748
+TOP_MARGIN = 724
 BOTTOM_MARGIN = 54
 CONTENT_WIDTH = PAGE_WIDTH - LEFT_MARGIN - RIGHT_MARGIN
 
@@ -44,9 +45,10 @@ def _wrap_text(text: str, max_chars: int) -> list[str]:
 
 
 class _Canvas:
-    def __init__(self) -> None:
+    def __init__(self, brand_name: str = "KryptScan") -> None:
         self.pages: list[list[str]] = []
         self.page_commands: list[str] = []
+        self.brand_name = brand_name
         self.y = TOP_MARGIN
         self._new_page()
 
@@ -54,6 +56,19 @@ class _Canvas:
         self.page_commands = []
         self.pages.append(self.page_commands)
         self.y = TOP_MARGIN
+        page_number = len(self.pages)
+        brand = _escape_pdf_text(self.brand_name[:70])
+        self.page_commands.extend(
+            [
+                f"0.025 0.055 0.120 rg 0 756 {PAGE_WIDTH} 36 re f",
+                f"0.110 0.330 0.820 rg 0 752 420 4 re f",
+                f"0.820 0.110 0.150 rg 420 752 {PAGE_WIDTH - 420} 4 re f",
+                f"BT /F2 10 Tf 1 1 1 rg 1 0 0 1 {LEFT_MARGIN} 770 Tm ({brand}) Tj ET",
+                f"0.020 0.025 0.035 rg 0 0 {PAGE_WIDTH} 32 re f",
+                f"BT /F1 8 Tf 0.88 0.90 0.94 rg 1 0 0 1 {LEFT_MARGIN} 12 Tm (CONFIDENTIAL - SECURITY ASSESSMENT) Tj ET",
+                f"BT /F1 8 Tf 0.88 0.90 0.94 rg 1 0 0 1 {PAGE_WIDTH - RIGHT_MARGIN - 45} 12 Tm (Page {page_number}) Tj ET",
+            ]
+        )
 
     def _ensure_space(self, height: float) -> None:
         if self.y - height < BOTTOM_MARGIN:
@@ -129,11 +144,51 @@ class _Canvas:
             self.y -= 10
         self.spacer(8)
 
+    def metric_grid(self, items: Iterable[tuple[str, str]]) -> None:
+        item_list = list(items)
+        if not item_list:
+            return
+        card_width = (CONTENT_WIDTH - 12) / 2
+        card_height = 50
+        colors = [
+            ((0.94, 0.97, 1.0), (0.10, 0.33, 0.82)),
+            ((1.0, 0.95, 0.95), (0.78, 0.12, 0.16)),
+            ((0.94, 0.99, 0.98), (0.04, 0.52, 0.43)),
+            ((0.98, 0.96, 1.0), (0.42, 0.18, 0.72)),
+        ]
+        for row_start in range(0, len(item_list), 2):
+            self._ensure_space(card_height + 6)
+            row_top = self.y
+            for column, (label, value) in enumerate(item_list[row_start:row_start + 2]):
+                x = LEFT_MARGIN + column * (card_width + 12)
+                y = row_top - card_height
+                fill, accent = colors[(row_start + column) % len(colors)]
+                self.page_commands.append(
+                    f"{fill[0]:.3f} {fill[1]:.3f} {fill[2]:.3f} rg {x:.2f} {y:.2f} {card_width:.2f} {card_height:.2f} re f"
+                )
+                self.page_commands.append(
+                    f"{accent[0]:.3f} {accent[1]:.3f} {accent[2]:.3f} rg {x:.2f} {y:.2f} 5 {card_height:.2f} re f"
+                )
+                safe_label = _escape_pdf_text(label.upper()[:42])
+                safe_value = _escape_pdf_text(value.replace("_", " ")[:46])
+                self.page_commands.append(
+                    f"BT /F1 8 Tf 0.30 0.38 0.49 rg 1 0 0 1 {x + 14:.2f} {row_top - 16:.2f} Tm ({safe_label}) Tj ET"
+                )
+                self.page_commands.append(
+                    f"BT /F2 12 Tf 0.07 0.13 0.24 rg 1 0 0 1 {x + 14:.2f} {row_top - 35:.2f} Tm ({safe_value}) Tj ET"
+                )
+            self.y -= card_height + 6
+        self.spacer(4)
+
 
 def _safe(value: str | None, fallback: str = "Not provided") -> str:
     if value is None:
         return fallback
     return value.strip() or fallback
+
+
+def _risk_score_label(report: AssessmentReport) -> str:
+    return f"{report.risk_score}/100" if report.risk_score is not None else "Undetermined"
 
 
 def _redact_sensitive(value: str | None) -> str:
@@ -222,9 +277,9 @@ def _verification_guidance(finding: Finding) -> str:
 
 def _positive_observations(report: AssessmentReport) -> list[str]:
     positives = []
-    if report.severity_counts.critical == 0:
+    if report.risk_score is not None and report.severity_counts.critical == 0:
         positives.append("No critical vulnerability was confirmed from the available evidence.")
-    if report.severity_counts.high == 0:
+    if report.risk_score is not None and report.severity_counts.high == 0:
         positives.append("No high-severity vulnerability was confirmed from the available evidence.")
     passed = [finding.title for finding in report.findings if finding.validation_status == "NOT_VULNERABLE"]
     positives.extend(f"{title} did not validate as vulnerable." for title in passed[:3])
@@ -245,10 +300,14 @@ def _write_cover_page(
     owner_details: dict[str, str] | None,
     scan_metadata: dict[str, str | None] | None = None,
 ) -> None:
-    client = _safe((owner_details or {}).get("Company name") or (msp_details or {}).get("Company name"), "Authorized Organization")
-    canvas.text("KryptScan", size=24, bold=True, color=(0.07, 0.25, 0.65))
+    issuer = _safe((msp_details or {}).get("Company name"), "Authorized Security Provider")
+    client = _safe(
+        (owner_details or {}).get("Assessed organization") or (owner_details or {}).get("Company name"),
+        "Authorized Target Owner",
+    )
+    canvas.text(issuer, size=24, bold=True, color=(0.07, 0.25, 0.65))
     canvas.spacer(8)
-    canvas.text("PENETRATION TEST REPORT", size=20, bold=True, color=(0.70, 0.10, 0.12))
+    canvas.text("PENETRATION TESTING REPORT", size=20, bold=True, color=(0.70, 0.10, 0.12))
     canvas.spacer(18)
     canvas.text("CONFIDENTIAL - SECURITY ASSESSMENT REPORT", size=13, bold=True)
     canvas.divider()
@@ -266,10 +325,12 @@ def _write_cover_page(
         ("Scan Status", _safe((scan_metadata or {}).get("status"))),
         ("Scan Started", _safe((scan_metadata or {}).get("started_at"))),
         ("Scan Completed", _safe((scan_metadata or {}).get("completed_at"))),
+        ("Assessment Outcome", report.assessment_outcome),
+        ("Assessment Platform", "KryptScan"),
     ]:
         canvas.text(f"{label}: {value}", size=12)
     canvas.spacer(20)
-    canvas.text("Generated by KryptScan Security Assessment Platform", size=10, color=(0.35, 0.40, 0.45))
+    canvas.text("Assessment evidence processed by the KryptScan platform", size=10, color=(0.35, 0.40, 0.45))
     canvas.page_break()
 
 
@@ -292,11 +353,19 @@ def _write_executive_dashboard(canvas: _Canvas, report: AssessmentReport) -> Non
     confirmed = sum(1 for item in report.findings if item.validation_status in {"CONFIRMED", "LIKELY"})
     needs_validation = sum(1 for item in report.findings if item.validation_status in {"POTENTIAL", "INCONCLUSIVE"})
     assets_tested = len({item.host for item in report.findings if item.host})
-    services = len({item.service for item in report.findings if item.service})
+    services = len(
+        {
+            item.service
+            for item in report.findings
+            if item.service and is_customer_facing_service(item)
+        }
+    )
     metrics = [
+        ("Assessment Outcome", report.assessment_outcome),
         ("Overall Security Risk", report.risk_band),
-        ("Risk Score", f"{report.risk_score}/100"),
+        ("Risk Score", _risk_score_label(report)),
         ("Assessment Coverage", f"{report.assessment_coverage}%"),
+        ("Analyst Review", report.analyst_review_status),
         ("Critical Vulnerabilities", str(report.severity_counts.critical)),
         ("High Vulnerabilities", str(report.severity_counts.high)),
         ("Medium Vulnerabilities", str(report.severity_counts.medium)),
@@ -308,8 +377,7 @@ def _write_executive_dashboard(canvas: _Canvas, report: AssessmentReport) -> Non
         ("Services Assessed", str(services)),
     ]
     canvas.text("Executive Summary", size=18, bold=True)
-    for label, value in metrics:
-        canvas.text(f"{label}: {value}", size=10, bold=label in {"Overall Security Risk", "Risk Score"})
+    canvas.metric_grid(metrics)
     canvas.divider()
     canvas.text("Executive Interpretation", size=14, bold=True)
     canvas.text(report.executive_summary, size=11, extra_gap=4)
@@ -364,7 +432,8 @@ def _build_pentest_pdf_bytes(
     owner_details: dict[str, str] | None = None,
     scan_metadata: dict[str, str | None] | None = None,
 ) -> bytes:
-    canvas = _Canvas()
+    issuer = _safe((msp_details or {}).get("Company name"), "Authorized Security Provider")
+    canvas = _Canvas(brand_name=issuer)
     _write_cover_page(
         canvas,
         target=target,
@@ -388,7 +457,7 @@ def _build_pentest_pdf_bytes(
                 size=10,
             )
     else:
-        canvas.text("No confirmed or potential vulnerabilities were validated from the available evidence.", size=10, indent=8)
+        canvas.text("No confirmed or potential vulnerability finding was available in the usable evidence. This does not establish that vulnerabilities are absent.", size=10, indent=8)
     canvas.divider()
 
     canvas.text("Scope & Authorization", size=14, bold=True)
@@ -418,8 +487,8 @@ def _build_pentest_pdf_bytes(
         ("Phase 1 - Reconnaissance", "DNS analysis, approved asset discovery, host discovery, technology identification, and external attack-surface identification."),
         ("Phase 2 - Enumeration", "Ports, services, versions, TLS posture, web technologies, and exposed interfaces."),
         ("Phase 3 - Vulnerability Discovery", "Known vulnerability checks, web security checks, TLS/security configuration review, service configuration review, and application weakness discovery."),
-        ("Phase 4 - Validation", "Candidate vulnerabilities were subjected to permitted, non-destructive validation."),
-        ("Phase 5 - Correlation", "Scanner results were normalized, deduplicated, correlated, and validated."),
+        ("Phase 4 - Automated Validation", "Candidate evidence was evaluated using permitted, non-destructive automated checks. Manual exploitation is not implied."),
+        ("Phase 5 - Correlation", "Scanner results were normalized, deduplicated, and checked for evidence consistency."),
         ("Phase 6 - Risk Analysis", "Confirmed and likely findings were evaluated using severity, exploitability, exposure, confidence, and business relevance."),
         ("Phase 7 - Reporting", "Findings were translated into technical and management recommendations."),
     ]
@@ -431,19 +500,15 @@ def _build_pentest_pdf_bytes(
     canvas.divider()
 
     canvas.text("Assessment Coverage", size=14, bold=True)
+    canvas.text(f"Assessment Outcome: {report.assessment_outcome}", size=11, bold=True)
     canvas.text(f"Assessment Coverage: {report.assessment_coverage}% - {report.assessment_coverage_status}", size=11, bold=True)
-    for area, area_status in [
-        ("Host Discovery", "COMPLETED"),
-        ("Port Discovery", "COMPLETED"),
-        ("Service Enumeration", "COMPLETED"),
-        ("TLS Assessment", "COMPLETED"),
-        ("Web Vulnerability Testing", "COMPLETED" if report.assessment_coverage >= 70 else "PARTIAL"),
-        ("WAF Detection", "COMPLETED" if not report.diagnostics else "PARTIAL"),
-        ("Known Vulnerability Correlation", "COMPLETED"),
-        ("Authenticated Testing", "NOT AUTHORIZED"),
-        ("API Testing", "NOT APPLICABLE"),
-    ]:
-        canvas.text(f"{area}: {area_status}", size=10, indent=8)
+    if report.coverage_categories:
+        for item in report.coverage_categories:
+            canvas.text(f"{item.name}: {item.status}", size=10, bold=True, indent=8)
+            if item.reason:
+                canvas.text(_redact_sensitive(item.reason), size=9, indent=16, color=(0.35, 0.40, 0.45))
+    else:
+        canvas.text("Category-level coverage data was not recorded for this assessment.", size=10, indent=8)
     canvas.divider()
 
     canvas.text("Scanner / Engine Health", size=14, bold=True)
@@ -464,16 +529,29 @@ def _build_pentest_pdf_bytes(
         canvas.text("No service-level attack surface observations were available.", size=10, indent=8)
     canvas.divider()
 
-    canvas.bar_chart(
-        "Severity Distribution",
+    if any(
         [
-            ("Critical", report.severity_counts.critical, (1.0, 0.16, 0.22)),
-            ("High", report.severity_counts.high, (1.0, 0.36, 0.22)),
-            ("Medium", report.severity_counts.medium, (0.95, 0.65, 0.18)),
-            ("Low", report.severity_counts.low, (0.19, 0.70, 0.42)),
-            ("Info", report.severity_counts.info, (0.25, 0.58, 0.95)),
-        ],
-    )
+            report.severity_counts.critical,
+            report.severity_counts.high,
+            report.severity_counts.medium,
+            report.severity_counts.low,
+            report.severity_counts.info,
+        ]
+    ):
+        canvas.bar_chart(
+            "Severity Distribution",
+            [
+                ("Critical", report.severity_counts.critical, (1.0, 0.16, 0.22)),
+                ("High", report.severity_counts.high, (1.0, 0.36, 0.22)),
+                ("Medium", report.severity_counts.medium, (0.95, 0.65, 0.18)),
+                ("Low", report.severity_counts.low, (0.19, 0.70, 0.42)),
+                ("Info", report.severity_counts.info, (0.25, 0.58, 0.95)),
+            ],
+        )
+    else:
+        canvas.text("Severity Distribution", size=13, bold=True)
+        canvas.text("No reportable vulnerability severity was established from the usable evidence.", size=10, indent=8)
+        canvas.divider()
 
     all_vulnerabilities = _actionable_findings(report)
     canvas.text("Findings Summary", size=14, bold=True)
@@ -485,7 +563,7 @@ def _build_pentest_pdf_bytes(
                 size=9,
             )
     else:
-        canvas.text("No vulnerability findings were included in the final findings register.", size=10, indent=8)
+        canvas.text("No vulnerability finding was included in the findings register; review coverage and limitations before drawing assurance conclusions.", size=10, indent=8)
     canvas.divider()
 
     for severity in ["critical", "high", "medium", "low"]:
@@ -568,8 +646,10 @@ def _build_pdf_bytes(
             scan_metadata=scan_metadata,
         )
 
-    canvas = _Canvas()
-    title = "KryptScan Ethical Pen-Testing Report" if assessment_mode in {"ethical_pentesting", "authorized_pentest"} else "KryptScan Vulnerability Assessment Report"
+    issuer = _safe((msp_details or {}).get("Company name"), "Authorized Security Provider")
+    canvas = _Canvas(brand_name=issuer)
+    title = "PENETRATION TESTING REPORT" if assessment_mode in {"ethical_pentesting", "authorized_pentest"} else "VULNERABILITY ASSESSMENT REPORT"
+    canvas.text(issuer, size=18, bold=True, color=(0.07, 0.25, 0.65))
     canvas.text(title, size=20, bold=True)
     canvas.text(target, size=15, bold=True, color=(0.18, 0.45, 0.62))
     canvas.spacer(4)
@@ -583,6 +663,7 @@ def _build_pdf_bytes(
     canvas.text(f"Scan started: {_safe((scan_metadata or {}).get('started_at'))}")
     canvas.text(f"Scan completed: {_safe((scan_metadata or {}).get('completed_at'))}")
     canvas.text(f"Generated at: {report.generated_at}")
+    canvas.text("Assessment platform: KryptScan")
     canvas.divider()
 
     if msp_details:
@@ -593,7 +674,7 @@ def _build_pdf_bytes(
         canvas.divider()
 
     if owner_details:
-        canvas.text("Domain / IP Owner", size=14, bold=True)
+        canvas.text("Assessed Organization / Target", size=14, bold=True)
         for label, value in owner_details.items():
             if value:
                 canvas.text(f"{label}: {value}", size=10, indent=8)
@@ -606,8 +687,16 @@ def _build_pdf_bytes(
         canvas.text("Scope", size=12, bold=True)
         canvas.text(report.scope_summary, size=10, indent=8)
     canvas.spacer(4)
-    canvas.text(f"Overall risk score: {report.risk_score}/100", size=12, bold=True)
-    canvas.text(f"Risk band: {report.risk_band}", size=12)
+    canvas.metric_grid(
+        [
+            ("Assessment Outcome", report.assessment_outcome),
+            ("Overall Security Risk", report.risk_band),
+            ("Risk Score", _risk_score_label(report)),
+            ("Assessment Coverage", f"{report.assessment_coverage}% - {report.assessment_coverage_status}"),
+            ("Critical + High", str(report.severity_counts.critical + report.severity_counts.high)),
+            ("Analyst Review", report.analyst_review_status),
+        ]
+    )
     canvas.text(
         f"Assessment coverage: {report.assessment_coverage}% - {report.assessment_coverage_status}",
         size=12,
@@ -615,6 +704,13 @@ def _build_pdf_bytes(
         color=(0.70, 0.16, 0.16) if report.assessment_coverage_status != "Complete" else (0.10, 0.48, 0.34),
     )
     canvas.divider()
+
+    if report.coverage_categories:
+        canvas.text("Coverage by Category", size=14, bold=True)
+        for item in report.coverage_categories:
+            canvas.text(f"{item.name}: {item.status}", size=10, bold=True, indent=8)
+            canvas.text(_redact_sensitive(item.reason), size=9, indent=16, color=(0.35, 0.40, 0.45))
+        canvas.divider()
 
     if report.diagnostics:
         canvas.text("Assessment Coverage & Tool Health", size=14, bold=True)
@@ -659,16 +755,29 @@ def _build_pdf_bytes(
             canvas.text(f"- {item}", size=10, indent=8)
         canvas.divider()
 
-    canvas.bar_chart(
-        "Severity Distribution",
+    if any(
         [
-            ("Critical", report.severity_counts.critical, (1.0, 0.36, 0.45)),
-            ("High", report.severity_counts.high, (1.0, 0.48, 0.35)),
-            ("Medium", report.severity_counts.medium, (0.965, 0.678, 0.333)),
-            ("Low", report.severity_counts.low, (0.545, 0.878, 0.545)),
-            ("Info", report.severity_counts.info, (0.357, 0.753, 0.922)),
-        ],
-    )
+            report.severity_counts.critical,
+            report.severity_counts.high,
+            report.severity_counts.medium,
+            report.severity_counts.low,
+            report.severity_counts.info,
+        ]
+    ):
+        canvas.bar_chart(
+            "Severity Distribution",
+            [
+                ("Critical", report.severity_counts.critical, (1.0, 0.36, 0.45)),
+                ("High", report.severity_counts.high, (1.0, 0.48, 0.35)),
+                ("Medium", report.severity_counts.medium, (0.965, 0.678, 0.333)),
+                ("Low", report.severity_counts.low, (0.545, 0.878, 0.545)),
+                ("Info", report.severity_counts.info, (0.357, 0.753, 0.922)),
+            ],
+        )
+    else:
+        canvas.text("Severity Distribution", size=13, bold=True)
+        canvas.text("No reportable vulnerability severity was established from the usable evidence.", size=10, indent=8)
+        canvas.divider()
 
     if report.scan_protocols:
         canvas.text("Applied Scan Protocols", size=14, bold=True)
@@ -683,13 +792,14 @@ def _build_pdf_bytes(
         canvas.spacer(2)
     canvas.divider()
 
-    canvas.text("Remediation Priorities", size=14, bold=True)
-    for item in report.remediation_plan:
-        canvas.text(f"{item.priority}: {item.title}", size=11, bold=True)
-        canvas.text(item.action, size=10, indent=8)
-        canvas.text(f"Owner: {item.owner}", size=10, indent=8, color=(0.35, 0.40, 0.45))
-        canvas.spacer(2)
-    canvas.divider()
+    if report.remediation_plan:
+        canvas.text("Remediation Priorities", size=14, bold=True)
+        for item in report.remediation_plan:
+            canvas.text(f"{item.priority}: {item.title}", size=11, bold=True)
+            canvas.text(item.action, size=10, indent=8)
+            canvas.text(f"Owner: {item.owner}", size=10, indent=8, color=(0.35, 0.40, 0.45))
+            canvas.spacer(2)
+        canvas.divider()
 
     if report.top_services:
         canvas.bar_chart(
@@ -717,7 +827,7 @@ def _build_pdf_bytes(
 
     canvas.text("Confirmed and Potential Vulnerabilities", size=14, bold=True)
     if not vulnerability_findings:
-        canvas.text("No confirmed or potential vulnerability findings were validated from the available scanner evidence.", size=10, indent=8)
+        canvas.text("No confirmed or potential vulnerability finding was available in the usable scanner evidence. This does not establish that vulnerabilities are absent.", size=10, indent=8)
         canvas.spacer(4)
     for index, finding in enumerate(vulnerability_findings, start=1):
         canvas.text(

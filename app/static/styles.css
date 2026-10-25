@@ -2848,6 +2848,11 @@ textarea {
   color: #8e3914;
 }
 
+.risk-band.undetermined {
+  background: rgba(71, 85, 105, 0.14);
+  color: #334155;
+}
+
 .summary-copy {
   margin: 1rem 0 1.2rem;
 }
@@ -3187,9 +3192,18 @@ textarea {
 .pill.warn,
 .pill.running,
 .pill.queued,
-.pill.setup-needed {
+.pill.setup-needed,
+.pill.partial,
+.pill.substantial {
   background: rgba(239, 181, 61, 0.16);
   color: #7a5814;
+}
+
+.pill.inconclusive,
+.pill.limited,
+.pill.not_applicable {
+  background: rgba(71, 85, 105, 0.12);
+  color: #475569;
 }
 
 .pill.low,
