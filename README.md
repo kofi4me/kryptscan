@@ -191,6 +191,10 @@ This workspace is also configured to support a local Windows install of `nuclei.
 
 For the current codebase I chose Greenbone/OpenVAS as the implemented engine because it is practical to self-host inside your own product. If you want the most recognizable commercial engine for enterprise buyers, keep the provider abstraction and add a partner-approved Tenable connector rather than hard-coding the platform to a single vendor.
 
+## Production readiness gate
+
+Before releasing a scanner build, run the point-in-time automated release gate described in [PRODUCTION_CERTIFICATION.md](PRODUCTION_CERTIFICATION.md). A complete gate verifies the deployed service and worker, executable tool probes, private-network egress isolation, and live authorized standard VA, deep VA, and automated PT profiles. A preflight-only result is not sufficient for production release.
+
 ## References
 
 - [Greenbone Community Edition architecture](https://greenbone.github.io/docs/latest/architecture.html)

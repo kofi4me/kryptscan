@@ -213,7 +213,8 @@ Signature header: X-ANET-Signature
 ```
 
 9. Confirm the scan progresses through staged scanner work and creates/downloads a PDF report.
-10. Check Scanner Health in the dashboard.
+10. Install scanner egress isolation and run the automated production gate in `PRODUCTION_CERTIFICATION.md`.
+11. Release only when the current full gate returns `PASS`; `PREFLIGHT_PASS` alone is not production certification.
 
 ## Scanner Worker Quality Controls
 
@@ -237,10 +238,17 @@ If Scanner Health still shows missing tools after code updates, rebuild and rest
 
 ```bash
 cd /opt/kryptnet-services/kryptscan-app
-git pull
-docker-compose -f docker-compose.scanner.yml build --no-cache
-docker-compose -f docker-compose.scanner.yml up -d
-curl -s http://127.0.0.1:5200/health
+git pull --ff-only origin main
+sudo docker compose -f docker-compose.scanner.yml build --no-cache kryptnet-scanner
+sudo docker compose -f docker-compose.scanner.yml up -d --force-recreate kryptnet-scanner
+curl -sS http://127.0.0.1:5200/health
+```
+
+After recreating the scanner, reapply the source-scoped private-network egress policy:
+
+```bash
+sudo systemctl restart kryptscan-worker-egress.service
+sudo iptables -S KRYPTSCAN-EGRESS
 ```
 
 Remaining optional items:

@@ -8,8 +8,38 @@ ALERT_WEBHOOK_URL="${ALERT_WEBHOOK_URL:-}"
 
 failures=()
 systemctl is-active --quiet kryptnet-scan || failures+=("kryptnet-scan service is not active")
-curl --fail --silent --show-error --max-time 10 "$APP_HEALTH_URL" >/dev/null || failures+=("application health check failed")
-curl --fail --silent --show-error --max-time 15 "$WORKER_HEALTH_URL" >/dev/null || failures+=("scanner worker health check failed")
+
+app_health=""
+if ! app_health="$(curl --fail --silent --show-error --max-time 10 "$APP_HEALTH_URL")"; then
+  failures+=("application health check failed")
+elif ! python3 -c 'import json,sys; data=json.loads(sys.argv[1]); raise SystemExit(0 if data.get("status") == "ok" and data.get("scanner_backend") == "worker" else 1)' "$app_health"; then
+  failures+=("application health response is not production-ready")
+fi
+
+worker_health=""
+if ! worker_health="$(curl --fail --silent --show-error --max-time 15 "$WORKER_HEALTH_URL")"; then
+  failures+=("scanner worker health check failed")
+elif ! python3 -c '
+import json, sys
+data = json.loads(sys.argv[1])
+required = {
+    "nmap", "sslyze", "testssl.sh", "nuclei", "nikto", "whatweb", "wafw00f",
+    "zap-baseline.py", "httpx", "naabu", "dnsx", "katana", "subfinder", "amass",
+    "feroxbuster", "ffuf", "gobuster",
+}
+available = data.get("available_tools") or {}
+preflight = data.get("preflight") or {}
+ready = (
+    data.get("status") == "ok"
+    and all(available.get(name) is True for name in required)
+    and preflight.get("testssl_dependencies_ready") is True
+    and preflight.get("nuclei_templates_ready") is True
+    and preflight.get("artificial_scan_delay_enabled") is False
+)
+raise SystemExit(0 if ready else 1)
+' "$worker_health"; then
+  failures+=("scanner worker reports missing tools or failed preflight")
+fi
 
 disk_use="$(df -P / | awk 'NR==2 {gsub(/%/, "", $5); print $5}')"
 if [[ "$disk_use" -ge "$DISK_THRESHOLD_PERCENT" ]]; then

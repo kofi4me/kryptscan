@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import tempfile
 import threading
@@ -86,17 +87,19 @@ def _validate_target(target: str) -> str:
             status_code=400,
             detail="Invalid target. Put authorization reference, testing scope, and testing window in their own fields, not in the target field.",
         )
+    if "://" in raw:
+        parsed = urlparse(raw)
+        if parsed.scheme.lower() not in {"http", "https"}:
+            raise HTTPException(status_code=400, detail="Invalid target. Website URLs must use HTTP or HTTPS.")
+        if parsed.username or parsed.password:
+            raise HTTPException(status_code=400, detail="Invalid target. Do not include credentials in the target URL.")
     host = _host(raw).strip().lower()
     if not host or any(char in host for char in " /\\;&|`$()<>"):
         raise HTTPException(status_code=400, detail="Invalid target.")
     try:
         network = ipaddress.ip_network(host, strict=False)
         if not ALLOW_PRIVATE_TARGETS and any(
-            address.is_private
-            or address.is_loopback
-            or address.is_link_local
-            or address.is_reserved
-            or address.is_unspecified
+            not address.is_global or address.is_multicast
             for address in (network.network_address, network.broadcast_address)
         ):
             raise HTTPException(status_code=400, detail="Private, loopback, reserved, or link-local targets are blocked.")
@@ -110,6 +113,21 @@ def _validate_target(target: str) -> str:
         pass
     if not DOMAIN_RE.match(host.rstrip(".")):
         raise HTTPException(status_code=400, detail="Invalid target. Use a valid domain, IP address, CIDR range, or URL.")
+    if not ALLOW_PRIVATE_TARGETS:
+        try:
+            resolved = {
+                item[4][0].split("%", 1)[0]
+                for item in socket.getaddrinfo(host.rstrip("."), None, type=socket.SOCK_STREAM)
+            }
+        except socket.gaierror as exc:
+            raise HTTPException(status_code=400, detail="Target hostname could not be resolved safely.") from exc
+        if not resolved:
+            raise HTTPException(status_code=400, detail="Target hostname did not resolve to an address.")
+        if any(not ipaddress.ip_address(address).is_global for address in resolved):
+            raise HTTPException(
+                status_code=400,
+                detail="Target hostname resolves to a private, loopback, reserved, or link-local address.",
+            )
     return host
 
 
@@ -268,7 +286,16 @@ def _stage_security_result(
     ]
     if any(marker in lower for marker in inconclusive_markers):
         return "INCONCLUSIVE"
-    if not output.strip() and tool.lower() not in {"nuclei", "feroxbuster", "ffuf", "gobuster"}:
+    valid_empty_result_tools = {
+        "amass",
+        "feroxbuster",
+        "ffuf",
+        "gobuster",
+        "katana",
+        "nuclei",
+        "subfinder",
+    }
+    if not output.strip() and tool.lower() not in valid_empty_result_tools:
         return "INCONCLUSIVE"
     return "NOT_VULNERABLE"
 
@@ -1001,7 +1028,15 @@ def _run_scan(payload: ScanRequest, job_id: str | None = None) -> dict:
             if preflight_error:
                 ok, output = False, preflight_error
             else:
-                ok, output = _run(command, output_dir)
+                try:
+                    _validate_target(payload.target)
+                    api_base_url = _context_text(payload, "api_base_url")
+                    if category.startswith("API") and api_base_url:
+                        _validate_target(api_base_url)
+                except HTTPException as exc:
+                    ok, output = False, f"Target safety revalidation failed: {exc.detail}"
+                else:
+                    ok, output = _run(command, output_dir)
             elapsed = round(time.monotonic() - stage_started, 1)
             execution_status = (
                 "COMPLETED"

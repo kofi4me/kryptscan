@@ -3,6 +3,9 @@ from __future__ import annotations
 import importlib.util
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from fastapi import HTTPException
 
 from app.models import AssessmentCheckResult, Finding
 from app.services.reporting import build_assessment_report
@@ -162,12 +165,50 @@ class ReportingAccuracyTests(unittest.TestCase):
             "INCONCLUSIVE",
         )
         self.assertEqual(worker._stage_security_result("Nuclei", "COMPLETED", "", []), "NOT_VULNERABLE")
+        self.assertEqual(worker._stage_security_result("Subfinder", "COMPLETED", "", []), "NOT_VULNERABLE")
 
     def test_worker_has_no_artificial_scan_dwell(self) -> None:
         source = WORKER_MAIN.read_text(encoding="utf-8")
         self.assertEqual(worker.MIN_FULL_SCAN_SECONDS, 0)
         self.assertNotIn("Professional scan dwell time enforced", source)
         self.assertNotIn("time.sleep(remaining)", source)
+
+    def test_worker_blocks_hostname_resolving_to_private_address(self) -> None:
+        private_resolution = [
+            (worker.socket.AF_INET, worker.socket.SOCK_STREAM, 6, "", ("10.0.0.5", 0)),
+        ]
+        with (
+            patch.object(worker, "ALLOW_PRIVATE_TARGETS", False),
+            patch.object(worker.socket, "getaddrinfo", return_value=private_resolution),
+            self.assertRaises(HTTPException) as raised,
+        ):
+            worker._validate_target("scanner-bypass.example")
+
+        self.assertIn("resolves to a private", raised.exception.detail)
+
+    def test_worker_allows_hostname_when_every_resolved_address_is_global(self) -> None:
+        public_resolution = [
+            (worker.socket.AF_INET, worker.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
+            (worker.socket.AF_INET6, worker.socket.SOCK_STREAM, 6, "", ("2606:2800:220:1:248:1893:25c8:1946", 0, 0, 0)),
+        ]
+        with (
+            patch.object(worker, "ALLOW_PRIVATE_TARGETS", False),
+            patch.object(worker.socket, "getaddrinfo", return_value=public_resolution),
+        ):
+            self.assertEqual(worker._validate_target("example.com"), "example.com")
+
+    def test_worker_rejects_credentials_and_non_http_url_schemes(self) -> None:
+        with self.assertRaises(HTTPException):
+            worker._validate_target("https://user:secret@example.com")
+        with self.assertRaises(HTTPException):
+            worker._validate_target("ftp://example.com")
+
+    def test_worker_blocks_shared_and_multicast_ip_ranges(self) -> None:
+        with patch.object(worker, "ALLOW_PRIVATE_TARGETS", False):
+            with self.assertRaises(HTTPException):
+                worker._validate_target("100.64.0.1")
+            with self.assertRaises(HTTPException):
+                worker._validate_target("224.0.0.1")
 
 
 if __name__ == "__main__":

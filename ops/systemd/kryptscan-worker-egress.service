@@ -1,0 +1,14 @@
+[Unit]
+Description=KryptScan scanner private-network egress isolation
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/kryptnet-services/kryptscan-app
+ExecStart=/opt/kryptnet-services/kryptscan-app/ops/kryptscan-worker-egress.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 WORKER_MAIN = Path(__file__).resolve().parents[1] / "scanner-worker" / "app" / "main.py"
@@ -28,9 +29,13 @@ class WorkerPlanTests(unittest.TestCase):
             testing_context={"service_level": "deep"},
         )
 
-        standard_tools = {name for name, _, _ in worker._tool_plan("example.com", standard)}
-        deep_tools = {name for name, _, _ in worker._tool_plan("example.com", deep)}
-        pentest_tools = {name for name, _, _ in worker._tool_plan("example.com", pentest)}
+        public_resolution = [
+            (worker.socket.AF_INET, worker.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
+        ]
+        with patch.object(worker.socket, "getaddrinfo", return_value=public_resolution):
+            standard_tools = {name for name, _, _ in worker._tool_plan("example.com", standard)}
+            deep_tools = {name for name, _, _ in worker._tool_plan("example.com", deep)}
+            pentest_tools = {name for name, _, _ in worker._tool_plan("example.com", pentest)}
 
         self.assertLess(standard_tools, deep_tools)
         self.assertLess(deep_tools, pentest_tools)
