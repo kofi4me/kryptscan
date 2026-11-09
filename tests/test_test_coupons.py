@@ -62,7 +62,8 @@ class TestCouponProvisioningTests(unittest.TestCase):
             self.assertNotEqual(row["code_hash"], coupon["code"])
 
         tester = self.connection.execute("SELECT * FROM users WHERE id = 2").fetchone()
-        result = redeem_coupon(self.connection, tester, str(coupons[0]["code"]))
+        with patch("app.services.credits._now", return_value=fixed_now):
+            result = redeem_coupon(self.connection, tester, str(coupons[0]["code"]))
         self.assertEqual(result["credits_granted"], 20)
 
     def test_uses_verified_admin_as_coupon_creator(self) -> None:
